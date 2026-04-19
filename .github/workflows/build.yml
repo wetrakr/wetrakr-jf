@@ -81,9 +81,15 @@ jobs:
             cd gh-pages
             git init -b gh-pages
             git remote add origin "$REPO_URL"
-            jprm repo init .
-            echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > README.md
             cd ..
+          fi
+
+          # manifest.json may not exist (fresh branch OR previously wiped).
+          # jprm repo init is idempotent-safe: re-running on a dir that
+          # already has a manifest would clobber it, so only init when missing.
+          if [ ! -f gh-pages/manifest.json ]; then
+            ( cd gh-pages && jprm repo init . )
+            [ -f gh-pages/README.md ] || echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > gh-pages/README.md
           fi
 
           # Manifest URLs are built as SOURCE_URL/<plugin_slug>/<zip>.
