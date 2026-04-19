@@ -33,13 +33,14 @@ jobs:
           sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
 
       - name: Build
-        run: dotnet publish Jellyfin.Plugin.WeTrakr/Jellyfin.Plugin.WeTrakr.csproj \
-               -c Release \
-               -f net8.0 \
-               -o ./publish \
-               -p:Version=${{ steps.ver.outputs.assembly }} \
-               -p:AssemblyVersion=${{ steps.ver.outputs.assembly }} \
-               -p:FileVersion=${{ steps.ver.outputs.assembly }}
+        run: |
+          dotnet publish Jellyfin.Plugin.WeTrakr/Jellyfin.Plugin.WeTrakr.csproj \
+            -c Release \
+            -f net8.0 \
+            -o ./publish \
+            -p:Version=${{ steps.ver.outputs.assembly }} \
+            -p:AssemblyVersion=${{ steps.ver.outputs.assembly }} \
+            -p:FileVersion=${{ steps.ver.outputs.assembly }}
 
       - name: Install JPRM
         run: pip install jprm

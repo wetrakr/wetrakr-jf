@@ -1,4 +1,3 @@
-using Jellyfin.Api.Constants;
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Configuration;
 using Microsoft.AspNetCore.Authorization;
@@ -14,7 +13,7 @@ namespace Jellyfin.Plugin.WeTrakr.Controllers;
 /// </summary>
 [ApiController]
 [Route("Plugins/WeTrakr")]
-[Authorize(Policy = Policies.RequiresElevation)]
+[Authorize(Policy = "RequiresElevation")]
 public class WeTrakrController : ControllerBase
 {
     private readonly DeviceCodeClient _device;
