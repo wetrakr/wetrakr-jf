@@ -1,0 +1,99 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish releases and push to gh-pages
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"                                   # e.g. v0.1.0
+          VER="${TAG#v}"                                             # 0.1.0
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "assembly=${VER}.0" >> "$GITHUB_OUTPUT"
+
+      - name: Update version in build.yaml
+        run: |
+          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
+
+      - name: Build
+        run: dotnet publish Jellyfin.Plugin.WeTrakr/Jellyfin.Plugin.WeTrakr.csproj \
+               -c Release \
+               -f net8.0 \
+               -o ./publish \
+               -p:Version=${{ steps.ver.outputs.assembly }} \
+               -p:AssemblyVersion=${{ steps.ver.outputs.assembly }} \
+               -p:FileVersion=${{ steps.ver.outputs.assembly }}
+
+      - name: Install JPRM
+        run: pip install jprm
+
+      - name: Package plugin (.zip)
+        id: pkg
+        run: |
+          mkdir -p artifacts
+          jprm --verbosity=debug plugin build . \
+            --output=./artifacts \
+            --dotnet-configuration=Release \
+            --dotnet-framework=net8.0 \
+            --version=${{ steps.ver.outputs.assembly }}
+          ZIP=$(ls artifacts/*.zip | head -1)
+          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+          echo "basename=$(basename "$ZIP")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.pkg.outputs.zip }}
+          generate_release_notes: true
+
+      # ---- Publish / update manifest.json on gh-pages ----
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Bootstrap gh-pages branch if empty
+        run: |
+          if [ ! -d gh-pages/.git ]; then
+            mkdir -p gh-pages && cd gh-pages
+            git init -b gh-pages
+            git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            echo '[]' > manifest.json
+            echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > README.md
+            git add manifest.json README.md
+            git -c user.name=github-actions -c user.email=actions@github.com commit -m "chore: bootstrap gh-pages"
+          fi
+
+      - name: Update manifest.json
+        run: |
+          SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${GITHUB_REF_NAME}/${{ steps.pkg.outputs.basename }}"
+          jprm repo add gh-pages/manifest.json "${{ steps.pkg.outputs.zip }}" --url "$SOURCE_URL"
+
+      - name: Commit and push gh-pages
+        run: |
+          cd gh-pages
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add manifest.json
+          git commit -m "release: ${{ steps.ver.outputs.assembly }}"
+          git push origin gh-pages

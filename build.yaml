@@ -1,0 +1,15 @@
+# JPRM build descriptor — https://github.com/oddstr13/jellyfin-plugin-repository-manager
+name: "WeTrakr Scrobbler"
+guid: "eaa1f0a3-7e4c-4c6f-9b80-0a2c1c5e2f01"
+version: "0.1.0.0"
+overview: "Automatic scrobbling to your WeTrakr profile."
+description: |
+  Sends playback events from Jellyfin (start, progress, pause, resume, stop)
+  to your WeTrakr account in real time. One-click pairing via device code.
+category: "General"
+owner: "wetrakr"
+artifacts:
+  - "Jellyfin.Plugin.WeTrakr.dll"
+changelog: "See https://github.com/wetrakr/wetrakr-jellyfin/releases"
+targetAbi: "10.9.11.0"
+framework: "net8.0"

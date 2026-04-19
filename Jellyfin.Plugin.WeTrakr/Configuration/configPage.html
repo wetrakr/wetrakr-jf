@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WeTrakr</title>
+</head>
+<body>
+<div id="WeTrakrConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox">
+
+  <div data-role="content">
+    <div class="content-primary">
+
+      <div class="verticalSection verticalSection-extrabottompadding">
+        <h2 class="sectionTitle">WeTrakr Scrobbler</h2>
+        <p class="fieldDescription">
+          Automatically send playback events to your WeTrakr profile. Movies and episodes are tracked — pause, resume and stop are detected from the player.
+        </p>
+      </div>
+
+      <!-- Disconnected state -->
+      <div id="wtStateDisconnected" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Not connected</h3>
+        <p class="fieldDescription">
+          Connect to your WeTrakr account to start scrobbling. You will need to confirm a short code on <strong>wetrakr.com/activate</strong>.
+        </p>
+        <button is="emby-button" type="button" class="raised button-submit" id="wtConnectBtn">
+          <span>Connect</span>
+        </button>
+      </div>
+
+      <!-- Pairing state -->
+      <div id="wtStatePairing" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Enter this code on WeTrakr</h3>
+        <p class="fieldDescription">
+          Open <a id="wtVerificationLink" href="#" target="_blank" rel="noopener">wetrakr.com/activate</a> and enter the code below. This page will update automatically when you confirm it.
+        </p>
+        <div id="wtUserCodeBox" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 2.2rem; letter-spacing: 0.4rem; padding: 1rem 1.25rem; background: rgba(108,74,215,0.12); border: 1px solid #6c4ad7; border-radius: 8px; display: inline-block; margin: 0.5rem 0;">
+          <span id="wtUserCode">------</span>
+        </div>
+        <p id="wtPairingStatus" class="fieldDescription"></p>
+        <button is="emby-button" type="button" class="button" id="wtCancelPairingBtn">
+          <span>Cancel</span>
+        </button>
+      </div>
+
+      <!-- Connected state -->
+      <div id="wtStateConnected" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Connected</h3>
+        <p class="fieldDescription">
+          Scrobbling to WeTrakr as <strong id="wtUsername">-</strong>.
+          <br/>
+          <span id="wtStats" style="opacity:0.75"></span>
+        </p>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtTogglePlaying" />
+            <span>Track playback (start / progress / pause / resume / stop)</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Disable to stop sending any playback events without disconnecting.
+          </div>
+        </div>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtToggleWatched" />
+            <span>Track "mark as watched" (coming soon)</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Sends ItemMarkedPlayed events. Reserved for a future plugin release.
+          </div>
+        </div>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtToggleRatings" />
+            <span>Sync ratings and favorites (coming soon)</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Sends UserDataSaved events. Reserved for a future plugin release.
+          </div>
+        </div>
+
+        <br/>
+
+        <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
+          <span>Disconnect</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="configurationpage?name=WeTrakr%20Scrobbler.js"></script>
+</div>
+</body>
+</html>
