@@ -86,7 +86,14 @@ jobs:
             cd ..
           fi
 
-          SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${GITHUB_REF_NAME}"
+          # Manifest URLs are built as SOURCE_URL/<plugin_slug>/<zip>.
+          # gh-pages is served at https://<owner>.github.io/<repo>/ so point
+          # there — jprm also copies the zip into gh-pages/<slug>/ so the
+          # download works from Pages directly. GitHub Releases still carries
+          # a copy for direct download.
+          OWNER=${GITHUB_REPOSITORY%%/*}
+          NAME=${GITHUB_REPOSITORY##*/}
+          SOURCE_URL="https://${OWNER}.github.io/${NAME}"
           jprm repo add --url="$SOURCE_URL" gh-pages "${{ steps.pkg.outputs.zip }}"
 
           cd gh-pages
