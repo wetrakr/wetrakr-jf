@@ -66,35 +66,32 @@ jobs:
 
       # ---- Publish / update manifest.json on gh-pages ----
 
-      - name: Checkout gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-        continue-on-error: true
-
-      - name: Bootstrap gh-pages branch if empty
+      - name: Update gh-pages manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ ! -d gh-pages/.git ]; then
-            mkdir -p gh-pages && cd gh-pages
+          set -e
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Try to clone the existing gh-pages branch. If it doesn't exist, bootstrap one.
+          if git ls-remote --exit-code --heads "$REPO_URL" gh-pages >/dev/null 2>&1; then
+            git clone --branch gh-pages "$REPO_URL" gh-pages
+          else
+            mkdir gh-pages
+            cd gh-pages
             git init -b gh-pages
-            git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-            echo '[]' > manifest.json
+            git remote add origin "$REPO_URL"
+            jprm repo init .
             echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > README.md
-            git add manifest.json README.md
-            git -c user.name=github-actions -c user.email=actions@github.com commit -m "chore: bootstrap gh-pages"
+            cd ..
           fi
 
-      - name: Update manifest.json
-        run: |
-          SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${GITHUB_REF_NAME}/${{ steps.pkg.outputs.basename }}"
-          jprm repo add gh-pages/manifest.json "${{ steps.pkg.outputs.zip }}" --url "$SOURCE_URL"
+          SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${GITHUB_REF_NAME}"
+          jprm repo add --url="$SOURCE_URL" gh-pages "${{ steps.pkg.outputs.zip }}"
 
-      - name: Commit and push gh-pages
-        run: |
           cd gh-pages
           git config user.name github-actions
           git config user.email actions@github.com
-          git add manifest.json
-          git commit -m "release: ${{ steps.ver.outputs.assembly }}"
+          git add -A
+          git commit -m "release: ${{ steps.ver.outputs.assembly }}" || { echo "nothing to commit"; exit 0; }
           git push origin gh-pages
