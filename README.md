@@ -1,4 +1,4 @@
-# WeTrakr Scrobbler for Jellyfin
+# WeTrakr for Jellyfin
 
 Dedicated Jellyfin plugin that scrobbles your playback activity to [WeTrakr](https://wetrakr.com).
 
@@ -8,14 +8,14 @@ Sends `PlaybackStart`, `PlaybackProgress` (periodic), `PlaybackPause`, `Playback
 
 1. Open Jellyfin → **Dashboard → Plugins → Repositories → Add Repository**.
 2. Name: `WeTrakr`. URL: `https://wetrakr.github.io/wetrakr-jellyfin/manifest.json`.
-3. Go to **Catalog**, find **WeTrakr Scrobbler**, install. Restart Jellyfin when prompted.
-4. Open **Dashboard → My Plugins → WeTrakr Scrobbler**, click **Connect**.
+3. Go to **Catalog**, find **WeTrakr**, install. Restart Jellyfin when prompted.
+4. Open **Dashboard → My Plugins → WeTrakr**, click **Connect**.
 5. A short code is shown. Open `https://wetrakr.com/activate?platform=jellyfin`, paste the code, confirm.
 6. The plugin page flips to **Connected**. Done.
 
 ## Uninstall
 
-Dashboard → My Plugins → WeTrakr Scrobbler → Uninstall → restart.
+Dashboard → My Plugins → WeTrakr → Uninstall → restart.
 
 ## Development
 
@@ -34,7 +34,7 @@ docker run -d --name jf -p 8096:8096 \
   jellyfin/jellyfin:10.9.11
 ```
 
-Browse to `http://localhost:8096`, run through the first-time setup, then Dashboard → My Plugins → WeTrakr Scrobbler.
+Browse to `http://localhost:8096`, run through the first-time setup, then Dashboard → My Plugins → WeTrakr.
 
 ### Point the plugin at a non-production API
 

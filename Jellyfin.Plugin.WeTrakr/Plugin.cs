@@ -20,7 +20,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override Guid Id => new("eaa1f0a3-7e4c-4c6f-9b80-0a2c1c5e2f01");
 
-    public override string Name => "WeTrakr Scrobbler";
+    public override string Name => "WeTrakr";
 
     public override string Description => "Automatic scrobbling to your WeTrakr profile. Tracks what you play, pause, resume and finish in Jellyfin.";
 
