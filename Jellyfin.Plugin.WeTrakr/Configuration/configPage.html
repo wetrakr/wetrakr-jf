@@ -127,10 +127,35 @@
           showState('Disconnected');
         }
       }).catch(function (err) {
-        // Fall back to disconnected on any error — at least the UI renders.
-        console.error('[WeTrakr] Status error:', err);
+        console.error('[WeTrakr] Status error:', err, 'status:', err && err.status);
         showState('Disconnected');
       });
+    }
+
+    function describeError(err) {
+      if (!err) return 'Unknown error';
+      if (err.status !== undefined) {
+        return 'HTTP ' + err.status + (err.statusText ? ' ' + err.statusText : '');
+      }
+      if (err.message) return err.message;
+      return String(err);
+    }
+
+    function alertError(prefix, err) {
+      Dashboard.hideLoadingMsg();
+      console.error('[WeTrakr]', prefix, err);
+      var base = prefix + ': ' + describeError(err);
+      // If we have a Response with a body, try to show it.
+      if (err && typeof err.text === 'function') {
+        err.text().then(function (body) {
+          var extra = body ? ('\n\n' + body.substring(0, 300)) : '';
+          Dashboard.alert({ message: base + extra, title: 'WeTrakr' });
+        }).catch(function () {
+          Dashboard.alert({ message: base, title: 'WeTrakr' });
+        });
+      } else {
+        Dashboard.alert({ message: base, title: 'WeTrakr' });
+      }
     }
 
     function startPairing() {
@@ -148,10 +173,7 @@
           showState('Pairing');
           pollTimer = setInterval(pollForToken, POLL_INTERVAL_MS);
         })
-        .catch(function (err) {
-          Dashboard.hideLoadingMsg();
-          Dashboard.alert({ message: 'Could not start pairing: ' + (err && err.message ? err.message : err), title: 'WeTrakr' });
-        });
+        .catch(function (err) { alertError('Could not start pairing', err); });
     }
 
     function pollForToken() {
