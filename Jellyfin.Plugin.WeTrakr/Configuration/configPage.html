@@ -2,6 +2,35 @@
 <html lang="en">
 <head>
     <title>WeTrakr</title>
+    <style>
+      /* Scoped to the WeTrakr config page */
+      #WeTrakrConfigPage a { color: rgb(121, 103, 255); text-decoration: none; }
+      #WeTrakrConfigPage a:hover { text-decoration: underline; }
+
+      /* Brand button — gradient matching WeTrakr web */
+      #WeTrakrConfigPage .wt-btn-brand,
+      #WeTrakrConfigPage #wtConnectBtn,
+      #WeTrakrConfigPage #wtCancelPairingBtn,
+      #WeTrakrConfigPage #wtDisconnectBtn {
+        background:
+          radial-gradient(circle at 15% -10%, rgb(77, 48, 201), #770dfd 84%),
+          radial-gradient(circle at 90% 0%, transparent 35%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.04));
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.55rem 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.15s ease;
+      }
+      #WeTrakrConfigPage .wt-btn-brand:hover,
+      #WeTrakrConfigPage #wtConnectBtn:hover,
+      #WeTrakrConfigPage #wtCancelPairingBtn:hover,
+      #WeTrakrConfigPage #wtDisconnectBtn:hover {
+        filter: brightness(1.1);
+      }
+    </style>
 </head>
 <body>
 <div id="WeTrakrConfigPage"
