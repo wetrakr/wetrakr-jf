@@ -15,10 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET 8
+      - name: Set up .NET 9
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
       - name: Derive version from tag
         id: ver
@@ -36,7 +36,7 @@ jobs:
         run: |
           dotnet publish Jellyfin.Plugin.WeTrakr/Jellyfin.Plugin.WeTrakr.csproj \
             -c Release \
-            -f net8.0 \
+            -f net9.0 \
             -o ./publish \
             -p:Version=${{ steps.ver.outputs.assembly }} \
             -p:AssemblyVersion=${{ steps.ver.outputs.assembly }} \

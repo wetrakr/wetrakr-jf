@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.WeTrakr</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.WeTrakr</AssemblyName>
     <Nullable>enable</Nullable>
