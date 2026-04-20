@@ -6,7 +6,7 @@
     "description": "Automatic scrobbling to your WeTrakr profile. Sends playback events (start, progress, pause, resume, stop) to your WeTrakr account in real time. One-click pairing via device code.",
     "overview": "Automatic scrobbling to your WeTrakr profile.",
     "owner": "wetrakr",
-    "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jellyfin/master/branding/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jellyfin/master/branding/thumbnail.png",
     "versions": []
   }
 ]
