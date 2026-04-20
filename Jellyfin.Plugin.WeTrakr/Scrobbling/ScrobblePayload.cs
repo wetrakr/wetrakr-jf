@@ -53,6 +53,17 @@ public class ScrobblePayload
 
     [JsonPropertyName("played")]
     public bool Played { get; set; }
+
+    // --- UserDataSaved events ---
+
+    [JsonPropertyName("is_favorite")]
+    public bool? IsFavorite { get; set; }
+
+    [JsonPropertyName("user_rating")]
+    public double? UserRating { get; set; }
+
+    [JsonPropertyName("save_reason")]
+    public string? SaveReason { get; set; }
 }
 
 public class ProviderIdsPayload

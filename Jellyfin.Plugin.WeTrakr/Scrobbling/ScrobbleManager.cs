@@ -1,3 +1,4 @@
+using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -5,6 +6,7 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -28,6 +30,8 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 public class ScrobbleManager : IHostedService
 {
     private readonly ISessionManager _sessions;
+    private readonly IUserDataManager _userData;
+    private readonly IUserManager _userManager;
     private readonly WeTrakrClient _client;
     private readonly PayloadBuilder _builder;
     private readonly PauseStateTracker _paused;
@@ -35,12 +39,16 @@ public class ScrobbleManager : IHostedService
 
     public ScrobbleManager(
         ISessionManager sessions,
+        IUserDataManager userData,
+        IUserManager userManager,
         WeTrakrClient client,
         PayloadBuilder builder,
         PauseStateTracker paused,
         ILogger<ScrobbleManager> logger)
     {
         _sessions = sessions;
+        _userData = userData;
+        _userManager = userManager;
         _client = client;
         _builder = builder;
         _paused = paused;
@@ -52,7 +60,8 @@ public class ScrobbleManager : IHostedService
         _sessions.PlaybackStart    += OnPlaybackStart;
         _sessions.PlaybackProgress += OnPlaybackProgress;
         _sessions.PlaybackStopped  += OnPlaybackStopped;
-        _logger.LogInformation("[WeTrakr] ScrobbleManager started — subscribed to playback events.");
+        _userData.UserDataSaved    += OnUserDataSaved;
+        _logger.LogInformation("[WeTrakr] ScrobbleManager started — subscribed to playback + user-data events.");
         return Task.CompletedTask;
     }
 
@@ -61,6 +70,7 @@ public class ScrobbleManager : IHostedService
         _sessions.PlaybackStart    -= OnPlaybackStart;
         _sessions.PlaybackProgress -= OnPlaybackProgress;
         _sessions.PlaybackStopped  -= OnPlaybackStopped;
+        _userData.UserDataSaved    -= OnUserDataSaved;
         _logger.LogInformation("[WeTrakr] ScrobbleManager stopped.");
         return Task.CompletedTask;
     }
@@ -109,6 +119,52 @@ public class ScrobbleManager : IHostedService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[WeTrakr] Dispatch failed for event {Event}", eventName);
+        }
+    }
+
+    // --- UserData events (mark watched, toggle favorite, rating) ---
+
+    private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)
+    {
+        // Only react to the user-triggered reasons we care about.
+        // Playback-driven saves are already covered by the ISessionManager path.
+        if (e.SaveReason != UserDataSaveReason.TogglePlayed
+            && e.SaveReason != UserDataSaveReason.UpdateUserRating)
+        {
+            return;
+        }
+
+        if (!ShouldDispatch(e.Item)) return;
+
+        // ItemMarkedPlayed covers both "mark watched" and "mark unwatched" —
+        // the `played` flag in the payload tells the backend which direction.
+        var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
+            ? "ItemMarkedPlayed"
+            : "UserDataSaved";
+
+        _ = DispatchUserDataAsync(e, eventName);
+    }
+
+    private async Task DispatchUserDataAsync(UserDataSaveEventArgs e, string eventName)
+    {
+        try
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config == null) return;
+            if (string.IsNullOrEmpty(config.WebhookToken)) return;
+
+            if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
+            if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
+
+            var user = _userManager.GetUserById(e.UserId);
+            if (user == null) return;
+
+            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, user, e.SaveReason.ToString());
+            await _client.SendAsync(config, payload, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[WeTrakr] UserDataSaved dispatch failed for event {Event}", eventName);
         }
     }
 

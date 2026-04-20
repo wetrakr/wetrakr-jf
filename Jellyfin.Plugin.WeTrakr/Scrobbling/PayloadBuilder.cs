@@ -1,5 +1,7 @@
+using Jellyfin.Data.Entities;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Entities;
 
@@ -29,22 +31,52 @@ public class PayloadBuilder
             Played = played
         };
 
+        AttachEpisodeMetadata(payload, item);
+        return payload;
+    }
+
+    /// <summary>
+    /// Build a payload for an out-of-band UserDataSaved event (mark watched,
+    /// toggle favorite, change rating). No session involved.
+    /// </summary>
+    public ScrobblePayload BuildUserData(string eventName, BaseItem item, UserItemData userData, User user, string saveReason)
+    {
+        var payload = new ScrobblePayload
+        {
+            Event = eventName,
+            UserId = user.Id.ToString("N"),
+            UserName = user.Username ?? string.Empty,
+            ItemId = item.Id.ToString("N"),
+            ItemType = item is Episode ? "Episode" : "Movie",
+            Name = item.Name ?? string.Empty,
+            ProviderIds = BuildProviderIds(item.ProviderIds),
+            PositionTicks = userData.PlaybackPositionTicks,
+            RuntimeTicks = item.RunTimeTicks ?? 0,
+            IsPaused = false,
+            Played = userData.Played,
+            IsFavorite = userData.IsFavorite,
+            UserRating = userData.Rating,
+            SaveReason = saveReason
+        };
+
+        AttachEpisodeMetadata(payload, item);
+        return payload;
+    }
+
+    private static void AttachEpisodeMetadata(ScrobblePayload payload, BaseItem item)
+    {
         if (item is Episode episode)
         {
             payload.SeriesName = episode.SeriesName ?? string.Empty;
             payload.Season = episode.ParentIndexNumber ?? 0;
             payload.Episode = episode.IndexNumber ?? 0;
 
-            // Walk up to the Series for richer provider IDs — show-level match is
-            // what the WeTrakr resolver prefers (series_provider_ids takes priority).
             var series = episode.Series;
             if (series != null)
             {
                 payload.SeriesProviderIds = BuildProviderIds(series.ProviderIds);
             }
         }
-
-        return payload;
     }
 
     private static ProviderIdsPayload BuildProviderIds(IReadOnlyDictionary<string, string>? ids)
