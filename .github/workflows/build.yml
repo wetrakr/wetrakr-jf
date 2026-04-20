@@ -52,7 +52,7 @@ jobs:
           jprm --verbosity=debug plugin build . \
             --output=./artifacts \
             --dotnet-configuration=Release \
-            --dotnet-framework=net8.0 \
+            --dotnet-framework=net9.0 \
             --version=${{ steps.ver.outputs.assembly }}
           ZIP=$(ls artifacts/*.zip | head -1)
           echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
