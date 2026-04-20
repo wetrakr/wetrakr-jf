@@ -7,28 +7,33 @@
       #WeTrakrConfigPage a { color: rgb(121, 103, 255); text-decoration: none; }
       #WeTrakrConfigPage a:hover { text-decoration: underline; }
 
-      /* Brand button — gradient matching WeTrakr web */
-      #WeTrakrConfigPage .wt-btn-brand,
-      #WeTrakrConfigPage #wtConnectBtn,
-      #WeTrakrConfigPage #wtCancelPairingBtn,
-      #WeTrakrConfigPage #wtDisconnectBtn {
+      /* Brand button — gradient matching WeTrakr web.
+         !important is needed because the `is="emby-button"` custom element
+         applies its own background with higher specificity at runtime. */
+      #WeTrakrConfigPage button#wtConnectBtn,
+      #WeTrakrConfigPage button#wtCancelPairingBtn,
+      #WeTrakrConfigPage button#wtDisconnectBtn {
         background:
           radial-gradient(circle at 15% -10%, rgb(77, 48, 201), #770dfd 84%),
           radial-gradient(circle at 90% 0%, transparent 35%),
-          linear-gradient(180deg, rgba(255, 255, 255, 0.04));
-        color: #fff;
-        border: none;
-        border-radius: 8px;
-        padding: 0.55rem 1.1rem;
-        font-weight: 600;
+          linear-gradient(180deg, rgba(255, 255, 255, 0.04)) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.55rem 1.1rem !important;
+        font-weight: 600 !important;
         cursor: pointer;
         transition: filter 0.15s ease;
       }
-      #WeTrakrConfigPage .wt-btn-brand:hover,
-      #WeTrakrConfigPage #wtConnectBtn:hover,
-      #WeTrakrConfigPage #wtCancelPairingBtn:hover,
-      #WeTrakrConfigPage #wtDisconnectBtn:hover {
+      #WeTrakrConfigPage button#wtConnectBtn:hover,
+      #WeTrakrConfigPage button#wtCancelPairingBtn:hover,
+      #WeTrakrConfigPage button#wtDisconnectBtn:hover {
         filter: brightness(1.1);
+      }
+      #WeTrakrConfigPage button#wtConnectBtn span,
+      #WeTrakrConfigPage button#wtCancelPairingBtn span,
+      #WeTrakrConfigPage button#wtDisconnectBtn span {
+        color: #fff !important;
       }
     </style>
 </head>

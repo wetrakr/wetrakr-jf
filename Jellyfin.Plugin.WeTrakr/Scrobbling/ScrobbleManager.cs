@@ -6,7 +6,6 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
-using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -31,7 +30,6 @@ public class ScrobbleManager : IHostedService
 {
     private readonly ISessionManager _sessions;
     private readonly IUserDataManager _userData;
-    private readonly IUserManager _userManager;
     private readonly WeTrakrClient _client;
     private readonly PayloadBuilder _builder;
     private readonly PauseStateTracker _paused;
@@ -40,7 +38,6 @@ public class ScrobbleManager : IHostedService
     public ScrobbleManager(
         ISessionManager sessions,
         IUserDataManager userData,
-        IUserManager userManager,
         WeTrakrClient client,
         PayloadBuilder builder,
         PauseStateTracker paused,
@@ -48,7 +45,6 @@ public class ScrobbleManager : IHostedService
     {
         _sessions = sessions;
         _userData = userData;
-        _userManager = userManager;
         _client = client;
         _builder = builder;
         _paused = paused;
@@ -126,23 +122,29 @@ public class ScrobbleManager : IHostedService
 
     private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)
     {
-        // Only react to the user-triggered reasons we care about.
-        // Playback-driven saves are already covered by the ISessionManager path.
-        if (e.SaveReason != UserDataSaveReason.TogglePlayed
-            && e.SaveReason != UserDataSaveReason.UpdateUserRating)
+        // Everything wrapped in try/catch — this handler runs on the HTTP
+        // request thread of Jellyfin's own FavoriteItems/PlayedItems
+        // endpoint; if it throws, the original request 500s for the user.
+        try
         {
-            return;
+            if (e.SaveReason != UserDataSaveReason.TogglePlayed
+                && e.SaveReason != UserDataSaveReason.UpdateUserRating)
+            {
+                return;
+            }
+
+            if (!ShouldDispatch(e.Item)) return;
+
+            var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
+                ? "ItemMarkedPlayed"
+                : "UserDataSaved";
+
+            _ = DispatchUserDataAsync(e, eventName);
         }
-
-        if (!ShouldDispatch(e.Item)) return;
-
-        // ItemMarkedPlayed covers both "mark watched" and "mark unwatched" —
-        // the `played` flag in the payload tells the backend which direction.
-        var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
-            ? "ItemMarkedPlayed"
-            : "UserDataSaved";
-
-        _ = DispatchUserDataAsync(e, eventName);
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[WeTrakr] OnUserDataSaved sync path threw");
+        }
     }
 
     private async Task DispatchUserDataAsync(UserDataSaveEventArgs e, string eventName)
@@ -156,15 +158,34 @@ public class ScrobbleManager : IHostedService
             if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
             if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
 
-            var user = _userManager.GetUserById(e.UserId);
-            if (user == null) return;
+            // Read username via the ABI-stable UserDataSaveEventArgs.User
+            // property if present. On older/newer Jellyfin that renamed the
+            // User entity namespace this reflection keeps us safe.
+            var userName = TryGetUserName(e);
 
-            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, user, e.SaveReason.ToString());
+            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString());
             await _client.SendAsync(config, payload, CancellationToken.None);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[WeTrakr] UserDataSaved dispatch failed for event {Event}", eventName);
+        }
+    }
+
+    private static string? TryGetUserName(UserDataSaveEventArgs e)
+    {
+        try
+        {
+            var userProp = e.GetType().GetProperty("User");
+            var user = userProp?.GetValue(e);
+            if (user == null) return null;
+
+            var nameProp = user.GetType().GetProperty("Username") ?? user.GetType().GetProperty("Name");
+            return nameProp?.GetValue(user) as string;
+        }
+        catch
+        {
+            return null;
         }
     }
 

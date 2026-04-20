@@ -1,4 +1,3 @@
-using Jellyfin.Data.Entities;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -38,14 +37,18 @@ public class PayloadBuilder
     /// <summary>
     /// Build a payload for an out-of-band UserDataSaved event (mark watched,
     /// toggle favorite, change rating). No session involved.
+    ///
+    /// Note: we intentionally do not reference Jellyfin's User entity type
+    /// here — it moved namespaces between 10.9 and 10.11. A plain Guid +
+    /// optional username string is ABI-stable.
     /// </summary>
-    public ScrobblePayload BuildUserData(string eventName, BaseItem item, UserItemData userData, User user, string saveReason)
+    public ScrobblePayload BuildUserData(string eventName, BaseItem item, UserItemData userData, Guid userId, string? userName, string saveReason)
     {
         var payload = new ScrobblePayload
         {
             Event = eventName,
-            UserId = user.Id.ToString("N"),
-            UserName = user.Username ?? string.Empty,
+            UserId = userId.ToString("N"),
+            UserName = userName ?? string.Empty,
             ItemId = item.Id.ToString("N"),
             ItemType = item is Episode ? "Episode" : "Movie",
             Name = item.Name ?? string.Empty,
