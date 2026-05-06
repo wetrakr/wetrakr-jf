@@ -6,8 +6,16 @@
         "overview": "Automatic scrobbling to your WeTrakr profile.",
         "owner": "wetrakr",
         "category": "General",
-        "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jellyfin/master/branding/thumbnail.png",
+        "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jf/master/branding/thumbnail.png",
         "versions": [
+            {
+                "version": "0.1.12.0",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
+                "targetAbi": "10.11.8.0",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.12.0.zip",
+                "checksum": "5fbf9c1c57396ceddfd74b096cc491c9",
+                "timestamp": "2026-05-06T00:04:37Z"
+            },
             {
                 "version": "0.1.11.0",
                 "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
