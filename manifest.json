@@ -18,81 +18,81 @@
             },
             {
                 "version": "0.1.11.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.11.8.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.11.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.11.0.zip",
                 "checksum": "952238ddf8a18c8b58567373aa8ba08a",
                 "timestamp": "2026-05-05T08:23:05Z"
             },
             {
                 "version": "0.1.10.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.11.8.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.10.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.10.0.zip",
                 "checksum": "d93a500761cf3d4dfa631ac176957bbb",
                 "timestamp": "2026-04-20T02:33:42Z"
             },
             {
                 "version": "0.1.7.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.7.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.7.0.zip",
                 "checksum": "f704f90dbc8f8ca0ab4b68b9e53f75d0",
                 "timestamp": "2026-04-20T02:18:47Z"
             },
             {
                 "version": "0.1.6.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.6.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.6.0.zip",
                 "checksum": "51351c95049145b34f923ea44836002e",
                 "timestamp": "2026-04-20T02:04:14Z"
             },
             {
                 "version": "0.1.5.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.5.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.5.0.zip",
                 "checksum": "cb59d05023bfbbf32da71cfbc37ed886",
                 "timestamp": "2026-04-20T01:57:16Z"
             },
             {
                 "version": "0.1.4.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.4.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.4.0.zip",
                 "checksum": "185b8946b080285935f9a36d382d2451",
                 "timestamp": "2026-04-20T01:49:07Z"
             },
             {
                 "version": "0.1.3.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.3.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.3.0.zip",
                 "checksum": "637b768f0b25862aecf2f1346300c762",
                 "timestamp": "2026-04-20T01:29:04Z"
             },
             {
                 "version": "0.1.2.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr/wetrakr_0.1.2.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.2.0.zip",
                 "checksum": "649ec0c46d607b39e2555dda2628e7c3",
                 "timestamp": "2026-04-20T01:20:31Z"
             },
             {
                 "version": "0.1.1.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr-scrobbler/wetrakr-scrobbler_0.1.1.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr-scrobbler/wetrakr-scrobbler_0.1.1.0.zip",
                 "checksum": "c35a717b100304f57fd5ffc34d660574",
                 "timestamp": "2026-04-20T01:03:21Z"
             },
             {
                 "version": "0.1.0.0",
-                "changelog": "See https://github.com/wetrakr/wetrakr-jellyfin/releases",
+                "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
                 "targetAbi": "10.9.11.0",
-                "sourceUrl": "https://wetrakr.github.io/wetrakr-jellyfin/wetrakr-scrobbler/wetrakr-scrobbler_0.1.0.0.zip",
+                "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr-scrobbler/wetrakr-scrobbler_0.1.0.0.zip",
                 "checksum": "4b2e5b2064a96623c5a96a19e9f9c562",
                 "timestamp": "2026-04-19T02:28:20Z"
             }
