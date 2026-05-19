@@ -134,11 +134,18 @@ jobs:
           LTS_SUM=$(md5sum "$LTS_DEST" | awk '{print $1}')
           STABLE_SUM=$(md5sum "$STABLE_DEST" | awk '{print $1}')
           TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          CHANGELOG="See https://github.com/${GITHUB_REPOSITORY}/releases"
+          RELEASES_URL="https://github.com/${GITHUB_REPOSITORY}/releases"
+
+          # Label the changelog per variant so users on Jellyfin 10.11+
+          # (where both LTS and Stable pass the targetAbi filter and appear
+          # as duplicate entries in the plugin revision history) can tell
+          # them apart when expanding a row.
+          LTS_CHANGELOG="Jellyfin 10.10 LTS build — See ${RELEASES_URL}"
+          STABLE_CHANGELOG="Jellyfin 10.11+ Stable build — See ${RELEASES_URL}"
 
           LTS_ENTRY=$(jq -nc \
             --arg version "$VERSION" \
-            --arg changelog "$CHANGELOG" \
+            --arg changelog "$LTS_CHANGELOG" \
             --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net8.zip" \
             --arg checksum "$LTS_SUM" \
             --arg timestamp "$TS" \
@@ -146,7 +153,7 @@ jobs:
 
           STABLE_ENTRY=$(jq -nc \
             --arg version "$VERSION" \
-            --arg changelog "$CHANGELOG" \
+            --arg changelog "$STABLE_CHANGELOG" \
             --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net9.zip" \
             --arg checksum "$STABLE_SUM" \
             --arg timestamp "$TS" \
