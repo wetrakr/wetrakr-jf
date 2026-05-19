@@ -5,7 +5,11 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
+#if NET8_0
+using Jellyfin.Data.Enums;
+#else
 using MediaBrowser.Model.Entities;
+#endif
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
