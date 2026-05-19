@@ -7,11 +7,20 @@ Sends `PlaybackStart`, `PlaybackProgress` (periodic), `PlaybackPause`, `Playback
 ## Install
 
 1. Open Jellyfin → **Dashboard → Plugins → Repositories → Add Repository**.
-2. Name: `WeTrakr`. URL: `https://wetrakr.github.io/wetrakr-jf/manifest.json`.
+2. Name: `WeTrakr`. URL — pick the one matching your server:
+
+   | Jellyfin server | Repository URL |
+   |-----------------|----------------|
+   | **10.11.x** (current stable) | `https://wetrakr.github.io/wetrakr-jf/manifest.json` |
+   | **10.10.x** (LTS)            | `https://wetrakr.github.io/wetrakr-jf/lts/manifest.json` |
+
 3. Go to **Catalog**, find **WeTrakr**, install. Restart Jellyfin when prompted.
 4. Open **Dashboard → My Plugins → WeTrakr**, click **Connect**.
 5. A short code is shown. Open `https://wetrakr.com/activate?platform=jellyfin`, paste the code, confirm.
 6. The plugin page flips to **Connected**. Done.
+
+> If you upgrade your Jellyfin server from 10.10 to 10.11, remove the LTS
+> repository, add the Stable one, then update the plugin.
 
 ## Uninstall
 

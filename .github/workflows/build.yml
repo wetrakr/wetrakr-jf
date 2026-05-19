@@ -82,70 +82,75 @@ jobs:
             ${{ env.STABLE_ZIP }}
           generate_release_notes: true
 
-      # ---- Publish / update manifest.json on gh-pages ----
+      # ---- Publish / update split manifests on gh-pages ----
+      #
+      # We publish TWO independent Jellyfin plugin repositories so that
+      # each user sees ONLY the entries compatible with their server line:
+      #
+      #   gh-pages/manifest.json        -> Stable only (Jellyfin 10.11+)
+      #   gh-pages/lts/manifest.json    -> LTS only    (Jellyfin 10.10.x)
+      #
+      # Jellyfin's manifest filter is `targetAbi <= server.version` (no
+      # upper bound), so a single merged manifest would always show LTS
+      # entries to 10.11+ users as duplicate "older versions". Splitting
+      # the URLs is the only way to deliver a clean revision history per
+      # server line.
 
-      - name: Update gh-pages manifest (both variants)
+      - name: Update gh-pages manifests (Stable + LTS)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-          # Try to clone the existing gh-pages branch. If it doesn't exist, bootstrap one.
           if git ls-remote --exit-code --heads "$REPO_URL" gh-pages >/dev/null 2>&1; then
             git clone --branch gh-pages "$REPO_URL" gh-pages
           else
             mkdir gh-pages
-            cd gh-pages
-            git init -b gh-pages
-            git remote add origin "$REPO_URL"
-            cd ..
+            ( cd gh-pages && git init -b gh-pages && git remote add origin "$REPO_URL" )
           fi
 
-          # manifest.json may not exist (fresh branch OR previously wiped).
-          # jprm repo init is idempotent-safe only when no manifest exists.
+          # Bootstrap root manifest if missing.
           if [ ! -f gh-pages/manifest.json ]; then
             ( cd gh-pages && jprm repo init . )
             [ -f gh-pages/README.md ] || echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > gh-pages/README.md
           fi
 
+          # One-shot migration: on first run with split manifests, seed
+          # lts/manifest.json from any LTS-targetAbi entries currently in
+          # root, then strip those entries from root. Subsequent runs are
+          # no-ops because root no longer contains LTS entries.
+          mkdir -p gh-pages/lts
+          if [ ! -f gh-pages/lts/manifest.json ]; then
+            jq 'map(.versions = (.versions | map(select(.targetAbi | startswith("10.10.")))))' \
+              gh-pages/manifest.json > gh-pages/lts/manifest.json
+          fi
+          jq 'map(.versions = (.versions | map(select((.targetAbi // "") | startswith("10.10.") | not))))' \
+            gh-pages/manifest.json > gh-pages/manifest.tmp.json
+          mv gh-pages/manifest.tmp.json gh-pages/manifest.json
+
           OWNER=${GITHUB_REPOSITORY%%/*}
           NAME=${GITHUB_REPOSITORY##*/}
           SOURCE_URL="https://${OWNER}.github.io/${NAME}"
 
-          # We bypass `jprm repo add` for dual-build releases because:
-          #  (a) jprm renames the destination ZIP to `<slug>_<version>.zip`,
-          #      so two artifacts with the same version collide on disk.
-          #  (b) jprm dedupes manifest entries by (guid, version), so the
-          #      second add would wipe the first.
-          # Instead we copy each ZIP with a framework-suffixed filename and
-          # splice both manifest entries directly with jq.
-
           VERSION="${{ steps.ver.outputs.assembly }}"
           mkdir -p gh-pages/wetrakr
 
-          # Copy both ZIPs with suffixed filenames so they coexist on Pages.
+          # Copy both ZIPs with framework-suffixed filenames so they
+          # coexist under wetrakr/ (shared by both manifests).
           LTS_DEST="gh-pages/wetrakr/wetrakr_${VERSION}_net8.zip"
           STABLE_DEST="gh-pages/wetrakr/wetrakr_${VERSION}_net9.zip"
           cp "${{ env.LTS_ZIP }}" "$LTS_DEST"
           cp "${{ env.STABLE_ZIP }}" "$STABLE_DEST"
 
-          # Compute md5 (manifest spec uses md5) and ISO-8601 timestamp.
           LTS_SUM=$(md5sum "$LTS_DEST" | awk '{print $1}')
           STABLE_SUM=$(md5sum "$STABLE_DEST" | awk '{print $1}')
           TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           RELEASES_URL="https://github.com/${GITHUB_REPOSITORY}/releases"
 
-          # Label the changelog per variant so users on Jellyfin 10.11+
-          # (where both LTS and Stable pass the targetAbi filter and appear
-          # as duplicate entries in the plugin revision history) can tell
-          # them apart when expanding a row.
-          LTS_CHANGELOG="Jellyfin 10.10 LTS build — See ${RELEASES_URL}"
-          STABLE_CHANGELOG="Jellyfin 10.11+ Stable build — See ${RELEASES_URL}"
-
           LTS_ENTRY=$(jq -nc \
             --arg version "$VERSION" \
-            --arg changelog "$LTS_CHANGELOG" \
+            --arg changelog "See ${RELEASES_URL}" \
             --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net8.zip" \
             --arg checksum "$LTS_SUM" \
             --arg timestamp "$TS" \
@@ -153,25 +158,23 @@ jobs:
 
           STABLE_ENTRY=$(jq -nc \
             --arg version "$VERSION" \
-            --arg changelog "$STABLE_CHANGELOG" \
+            --arg changelog "See ${RELEASES_URL}" \
             --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net9.zip" \
             --arg checksum "$STABLE_SUM" \
             --arg timestamp "$TS" \
             '{version:$version, changelog:$changelog, targetAbi:"10.11.8.0", sourceUrl:$sourceUrl, checksum:$checksum, timestamp:$timestamp}')
 
-          # Prepend Stable then LTS (Stable on top = newest ABI). If a prior
-          # run already added these versions (e.g. retry), strip duplicates
-          # by (version, targetAbi) first.
-          jq --argjson stable "$STABLE_ENTRY" --argjson lts "$LTS_ENTRY" \
-            '.[0].versions = (
-                [$stable, $lts]
-                + ([.[0].versions[] | select(
-                    .version != $stable.version
-                    or (.targetAbi != $stable.targetAbi and .targetAbi != $lts.targetAbi)
-                  )])
-             )' \
+          # Prepend each entry to its manifest and dedupe by version so
+          # retries of the same tag are idempotent.
+          jq --argjson e "$STABLE_ENTRY" \
+            '.[0].versions = ([$e] + (.[0].versions | map(select(.version != $e.version))))' \
             gh-pages/manifest.json > gh-pages/manifest.tmp.json
           mv gh-pages/manifest.tmp.json gh-pages/manifest.json
+
+          jq --argjson e "$LTS_ENTRY" \
+            '.[0].versions = ([$e] + (.[0].versions | map(select(.version != $e.version))))' \
+            gh-pages/lts/manifest.json > gh-pages/lts/manifest.tmp.json
+          mv gh-pages/lts/manifest.tmp.json gh-pages/lts/manifest.json
 
           cd gh-pages
           git config user.name github-actions
