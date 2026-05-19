@@ -116,13 +116,28 @@ jobs:
           # `jprm repo add` reads targetAbi/framework from the current
           # build.yaml. We swap it per ZIP so both manifest entries inherit
           # the right ABI metadata.
+          #
+          # jprm dedupes by (guid, version) when appending, so the second
+          # add would replace the first one with the same version string.
+          # Workaround: capture the LTS entry after the first add, run the
+          # Stable add (which overwrites it in the manifest), then re-insert
+          # the LTS entry alongside Stable with jq.
+
           cp build.lts.yaml build.yaml
           sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
           jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.LTS_ZIP }}"
+          LTS_ENTRY=$(jq -c '.[0].versions[0]' gh-pages/manifest.json)
 
           cp build.stable.yaml build.yaml
           sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
           jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.STABLE_ZIP }}"
+
+          # Re-insert LTS entry right after Stable so the manifest has both
+          # variants of this release (Stable first since it's the newer ABI).
+          jq --argjson lts "$LTS_ENTRY" \
+            '.[0].versions = ([.[0].versions[0]] + [$lts] + (.[0].versions[1:]))' \
+            gh-pages/manifest.json > gh-pages/manifest.tmp.json
+          mv gh-pages/manifest.tmp.json gh-pages/manifest.json
 
           cd gh-pages
           git config user.name github-actions
