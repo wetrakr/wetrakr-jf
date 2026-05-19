@@ -15,10 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET 8 + .NET 9
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
 
       - name: Derive version from tag
         id: ver
@@ -28,45 +30,61 @@ jobs:
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
           echo "assembly=${VER}.0" >> "$GITHUB_OUTPUT"
 
-      - name: Update version in build.yaml
-        run: |
-          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
-
-      - name: Build
-        run: |
-          dotnet publish Jellyfin.Plugin.WeTrakr/Jellyfin.Plugin.WeTrakr.csproj \
-            -c Release \
-            -f net9.0 \
-            -o ./publish \
-            -p:Version=${{ steps.ver.outputs.assembly }} \
-            -p:AssemblyVersion=${{ steps.ver.outputs.assembly }} \
-            -p:FileVersion=${{ steps.ver.outputs.assembly }}
-
       - name: Install JPRM
         run: pip install jprm
 
-      - name: Package plugin (.zip)
-        id: pkg
+      # ---- Dual-build: one ZIP per Jellyfin ABI ----
+      #
+      # We publish TWO artifacts per release sharing the same plugin version:
+      #   - LTS    → net8.0 / Jellyfin.Controller 10.10.7 / targetAbi 10.10.7.0
+      #   - Stable → net9.0 / Jellyfin.Controller 10.11.8 / targetAbi 10.11.8.0
+      #
+      # Jellyfin filters the manifest by targetAbi ≤ server version, so each
+      # user only ever sees the entry compatible with their server. Source
+      # code is identical between the two binaries — namespace differences
+      # are handled via `#if NET8_0` conditionals in the .cs files.
+
+      - name: Build LTS variant (net8.0 / Jellyfin 10.10.x)
         run: |
-          mkdir -p artifacts
+          cp build.lts.yaml build.yaml
+          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
+          mkdir -p artifacts-lts
           jprm --verbosity=debug plugin build . \
-            --output=./artifacts \
+            --output=./artifacts-lts \
+            --dotnet-configuration=Release \
+            --dotnet-framework=net8.0 \
+            --version=${{ steps.ver.outputs.assembly }}
+          ORIG=$(ls artifacts-lts/*.zip | head -1)
+          NEW="artifacts-lts/$(basename "$ORIG" .zip)_net8.zip"
+          mv "$ORIG" "$NEW"
+          echo "LTS_ZIP=${NEW}" >> "$GITHUB_ENV"
+
+      - name: Build Stable variant (net9.0 / Jellyfin 10.11.x)
+        run: |
+          cp build.stable.yaml build.yaml
+          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
+          mkdir -p artifacts-stable
+          jprm --verbosity=debug plugin build . \
+            --output=./artifacts-stable \
             --dotnet-configuration=Release \
             --dotnet-framework=net9.0 \
             --version=${{ steps.ver.outputs.assembly }}
-          ZIP=$(ls artifacts/*.zip | head -1)
-          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
-          echo "basename=$(basename "$ZIP")" >> "$GITHUB_OUTPUT"
+          ORIG=$(ls artifacts-stable/*.zip | head -1)
+          NEW="artifacts-stable/$(basename "$ORIG" .zip)_net9.zip"
+          mv "$ORIG" "$NEW"
+          echo "STABLE_ZIP=${NEW}" >> "$GITHUB_ENV"
 
-      - name: Upload to GitHub Release
+      - name: Upload both ZIPs to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.pkg.outputs.zip }}
+          files: |
+            ${{ env.LTS_ZIP }}
+            ${{ env.STABLE_ZIP }}
           generate_release_notes: true
 
       # ---- Publish / update manifest.json on gh-pages ----
 
-      - name: Update gh-pages manifest
+      - name: Update gh-pages manifest (both variants)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -85,26 +103,30 @@ jobs:
           fi
 
           # manifest.json may not exist (fresh branch OR previously wiped).
-          # jprm repo init is idempotent-safe: re-running on a dir that
-          # already has a manifest would clobber it, so only init when missing.
+          # jprm repo init is idempotent-safe only when no manifest exists.
           if [ ! -f gh-pages/manifest.json ]; then
             ( cd gh-pages && jprm repo init . )
             [ -f gh-pages/README.md ] || echo 'WeTrakr Jellyfin plugin repository — https://wetrakr.com' > gh-pages/README.md
           fi
 
-          # Manifest URLs are built as SOURCE_URL/<plugin_slug>/<zip>.
-          # gh-pages is served at https://<owner>.github.io/<repo>/ so point
-          # there — jprm also copies the zip into gh-pages/<slug>/ so the
-          # download works from Pages directly. GitHub Releases still carries
-          # a copy for direct download.
           OWNER=${GITHUB_REPOSITORY%%/*}
           NAME=${GITHUB_REPOSITORY##*/}
           SOURCE_URL="https://${OWNER}.github.io/${NAME}"
-          jprm repo add --url="$SOURCE_URL" gh-pages "${{ steps.pkg.outputs.zip }}"
+
+          # `jprm repo add` reads targetAbi/framework from the current
+          # build.yaml. We swap it per ZIP so both manifest entries inherit
+          # the right ABI metadata.
+          cp build.lts.yaml build.yaml
+          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
+          jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.LTS_ZIP }}"
+
+          cp build.stable.yaml build.yaml
+          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
+          jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.STABLE_ZIP }}"
 
           cd gh-pages
           git config user.name github-actions
           git config user.email actions@github.com
           git add -A
-          git commit -m "release: ${{ steps.ver.outputs.assembly }}" || { echo "nothing to commit"; exit 0; }
+          git commit -m "release: ${{ steps.ver.outputs.assembly }} (LTS + Stable)" || { echo "nothing to commit"; exit 0; }
           git push origin gh-pages

@@ -8,6 +8,8 @@ obj/
 
 # Packaging output
 artifacts/
+artifacts-lts/
+artifacts-stable/
 *.zip
 *.tar.gz
 
@@ -21,3 +23,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Claude Code per-repo memory (napkin runbook)
+.claude/
