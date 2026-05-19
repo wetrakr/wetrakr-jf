@@ -113,29 +113,56 @@ jobs:
           NAME=${GITHUB_REPOSITORY##*/}
           SOURCE_URL="https://${OWNER}.github.io/${NAME}"
 
-          # `jprm repo add` reads targetAbi/framework from the current
-          # build.yaml. We swap it per ZIP so both manifest entries inherit
-          # the right ABI metadata.
-          #
-          # jprm dedupes by (guid, version) when appending, so the second
-          # add would replace the first one with the same version string.
-          # Workaround: capture the LTS entry after the first add, run the
-          # Stable add (which overwrites it in the manifest), then re-insert
-          # the LTS entry alongside Stable with jq.
+          # We bypass `jprm repo add` for dual-build releases because:
+          #  (a) jprm renames the destination ZIP to `<slug>_<version>.zip`,
+          #      so two artifacts with the same version collide on disk.
+          #  (b) jprm dedupes manifest entries by (guid, version), so the
+          #      second add would wipe the first.
+          # Instead we copy each ZIP with a framework-suffixed filename and
+          # splice both manifest entries directly with jq.
 
-          cp build.lts.yaml build.yaml
-          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
-          jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.LTS_ZIP }}"
-          LTS_ENTRY=$(jq -c '.[0].versions[0]' gh-pages/manifest.json)
+          VERSION="${{ steps.ver.outputs.assembly }}"
+          mkdir -p gh-pages/wetrakr
 
-          cp build.stable.yaml build.yaml
-          sed -i "s|^version:.*|version: \"${{ steps.ver.outputs.assembly }}\"|" build.yaml
-          jprm repo add --url="$SOURCE_URL" gh-pages "${{ env.STABLE_ZIP }}"
+          # Copy both ZIPs with suffixed filenames so they coexist on Pages.
+          LTS_DEST="gh-pages/wetrakr/wetrakr_${VERSION}_net8.zip"
+          STABLE_DEST="gh-pages/wetrakr/wetrakr_${VERSION}_net9.zip"
+          cp "${{ env.LTS_ZIP }}" "$LTS_DEST"
+          cp "${{ env.STABLE_ZIP }}" "$STABLE_DEST"
 
-          # Re-insert LTS entry right after Stable so the manifest has both
-          # variants of this release (Stable first since it's the newer ABI).
-          jq --argjson lts "$LTS_ENTRY" \
-            '.[0].versions = ([.[0].versions[0]] + [$lts] + (.[0].versions[1:]))' \
+          # Compute md5 (manifest spec uses md5) and ISO-8601 timestamp.
+          LTS_SUM=$(md5sum "$LTS_DEST" | awk '{print $1}')
+          STABLE_SUM=$(md5sum "$STABLE_DEST" | awk '{print $1}')
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          CHANGELOG="See https://github.com/${GITHUB_REPOSITORY}/releases"
+
+          LTS_ENTRY=$(jq -nc \
+            --arg version "$VERSION" \
+            --arg changelog "$CHANGELOG" \
+            --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net8.zip" \
+            --arg checksum "$LTS_SUM" \
+            --arg timestamp "$TS" \
+            '{version:$version, changelog:$changelog, targetAbi:"10.10.7.0", sourceUrl:$sourceUrl, checksum:$checksum, timestamp:$timestamp}')
+
+          STABLE_ENTRY=$(jq -nc \
+            --arg version "$VERSION" \
+            --arg changelog "$CHANGELOG" \
+            --arg sourceUrl "${SOURCE_URL}/wetrakr/wetrakr_${VERSION}_net9.zip" \
+            --arg checksum "$STABLE_SUM" \
+            --arg timestamp "$TS" \
+            '{version:$version, changelog:$changelog, targetAbi:"10.11.8.0", sourceUrl:$sourceUrl, checksum:$checksum, timestamp:$timestamp}')
+
+          # Prepend Stable then LTS (Stable on top = newest ABI). If a prior
+          # run already added these versions (e.g. retry), strip duplicates
+          # by (version, targetAbi) first.
+          jq --argjson stable "$STABLE_ENTRY" --argjson lts "$LTS_ENTRY" \
+            '.[0].versions = (
+                [$stable, $lts]
+                + ([.[0].versions[] | select(
+                    .version != $stable.version
+                    or (.targetAbi != $stable.targetAbi and .targetAbi != $lts.targetAbi)
+                  )])
+             )' \
             gh-pages/manifest.json > gh-pages/manifest.tmp.json
           mv gh-pages/manifest.tmp.json gh-pages/manifest.json
 
