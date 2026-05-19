@@ -1,0 +1,45 @@
+[
+  {
+    "guid": "eaa1f0a3-7e4c-4c6f-9b80-0a2c1c5e2f01",
+    "name": "WeTrakr",
+    "description": "Sends playback events from Jellyfin (start, progress, pause, resume, stop)\nto your WeTrakr account in real time. One-click pairing via device code.\n",
+    "overview": "Automatic scrobbling to your WeTrakr profile.",
+    "owner": "wetrakr",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jf/master/branding/thumbnail.png",
+    "versions": [
+      {
+        "version": "0.1.18.0",
+        "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.18.0_net8.zip",
+        "checksum": "5abc7d98ffc919702b467f7359dd4735",
+        "timestamp": "2026-05-19T09:26:26Z"
+      },
+      {
+        "version": "0.1.17.0",
+        "changelog": "Jellyfin 10.10 LTS build — See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.17.0_net8.zip",
+        "checksum": "ba08c97ca9f6a4c751460974126873cd",
+        "timestamp": "2026-05-19T08:55:26Z"
+      },
+      {
+        "version": "0.1.16.0",
+        "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.16.0_net8.zip",
+        "checksum": "e0d2c5a03cd4bcad0c893ff7e0d00782",
+        "timestamp": "2026-05-19T00:23:07Z"
+      },
+      {
+        "version": "0.1.15.0",
+        "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.15.0.zip",
+        "checksum": "2d9504fb0d06f95689284178b56e8eaa",
+        "timestamp": "2026-05-19T00:20:05Z"
+      }
+    ]
+  }
+]
