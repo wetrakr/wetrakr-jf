@@ -9,6 +9,22 @@
     "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jf/master/branding/thumbnail.png",
     "versions": [
       {
+        "version": "0.1.17.0",
+        "changelog": "Jellyfin 10.11+ Stable build — See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.11.8.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.17.0_net9.zip",
+        "checksum": "05c130d056e6846363fea4d7c0eea61c",
+        "timestamp": "2026-05-19T08:55:26Z"
+      },
+      {
+        "version": "0.1.17.0",
+        "changelog": "Jellyfin 10.10 LTS build — See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.10.7.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.17.0_net8.zip",
+        "checksum": "ba08c97ca9f6a4c751460974126873cd",
+        "timestamp": "2026-05-19T08:55:26Z"
+      },
+      {
         "version": "0.1.16.0",
         "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
         "targetAbi": "10.11.8.0",
