@@ -108,6 +108,7 @@ public class ScrobbleManager : IHostedService
             if (config == null) return;
             if (string.IsNullOrEmpty(config.WebhookToken)) return;   // not paired yet
             if (!config.ScrobblePlaying) return;                      // user disabled
+            if (!IsPinnedUser(config, session.UserId)) return;        // pinned to another user
 
             var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played);
             await _client.SendAsync(config, payload, CancellationToken.None);
@@ -154,6 +155,7 @@ public class ScrobbleManager : IHostedService
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
             if (string.IsNullOrEmpty(config.WebhookToken)) return;
+            if (!IsPinnedUser(config, e.UserId)) return;   // pinned to another user
 
             if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
             if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
@@ -188,6 +190,11 @@ public class ScrobbleManager : IHostedService
             return null;
         }
     }
+
+    // Empty PinnedUserId => scrobble everyone. Otherwise only the pinned user.
+    private static bool IsPinnedUser(PluginConfiguration config, Guid userId)
+        => string.IsNullOrEmpty(config.PinnedUserId)
+           || string.Equals(config.PinnedUserId, userId.ToString("N"), StringComparison.OrdinalIgnoreCase);
 
     private static bool ShouldDispatch(BaseItem? item)
     {

@@ -41,7 +41,7 @@
 <div id="WeTrakrConfigPage"
      data-role="page"
      class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-checkbox">
+     data-require="emby-input,emby-button,emby-checkbox,emby-select">
 
   <div data-role="content">
     <div class="content-primary">
@@ -104,6 +104,16 @@
           </div>
         </div>
 
+        <div class="selectContainer">
+          <label class="selectLabel" for="wtPinnedUser">Scrobble only this user</label>
+          <select is="emby-select" id="wtPinnedUser">
+            <option value="">All users</option>
+          </select>
+          <div class="fieldDescription">
+            Restrict scrobbling to a single Jellyfin user. Leave on "All users" to scrobble everyone on this server.
+          </div>
+        </div>
+
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label>
             <input type="checkbox" is="emby-checkbox" id="wtToggleWatched" />
@@ -162,6 +172,7 @@
           $('wtTogglePlaying').checked = !!s.ScrobblePlaying;
           $('wtToggleWatched').checked = !!s.ScrobbleWatched;
           $('wtToggleRatings').checked = !!s.ScrobbleRatings;
+          $('wtPinnedUser').value = s.PinnedUserId || '';
           showState('Connected');
         } else {
           showState('Disconnected');
@@ -169,6 +180,23 @@
       }).catch(function (err) {
         console.error('[WeTrakr] Status error:', err, 'status:', err && err.status);
         showState('Disconnected');
+      });
+    }
+
+    function populateUsers() {
+      return ApiClient.getUsers().then(function (users) {
+        var sel = $('wtPinnedUser');
+        // Drop everything but the leading "All users" option, then refill.
+        while (sel.options.length > 1) sel.remove(1);
+        users.forEach(function (u) {
+          var opt = document.createElement('option');
+          // Dashless to match Guid.ToString("N") stored server-side.
+          opt.value = (u.Id || '').replace(/-/g, '');
+          opt.textContent = u.Name;
+          sel.appendChild(opt);
+        });
+      }).catch(function (err) {
+        console.error('[WeTrakr] getUsers error:', err);
       });
     }
 
@@ -274,6 +302,7 @@
       $('wtTogglePlaying').addEventListener('change', function (e) { updateSetting('ScrobblePlaying', e.target.checked); });
       $('wtToggleWatched').addEventListener('change', function (e) { updateSetting('ScrobbleWatched', e.target.checked); });
       $('wtToggleRatings').addEventListener('change', function (e) { updateSetting('ScrobbleRatings', e.target.checked); });
+      $('wtPinnedUser').addEventListener('change', function (e) { updateSetting('PinnedUserId', e.target.value); });
     }
 
     var page = document.querySelector('#WeTrakrConfigPage');
@@ -281,7 +310,7 @@
 
     page.addEventListener('pageshow', function () {
       bindHandlers();
-      refreshStatus();
+      populateUsers().then(refreshStatus);
     });
 
     page.addEventListener('pagehide', stopPolling);
@@ -289,7 +318,7 @@
     // Also bind immediately in case the page is already visible (direct navigation).
     if (page.offsetParent !== null) {
       bindHandlers();
-      refreshStatus();
+      populateUsers().then(refreshStatus);
     }
   })();
   </script>

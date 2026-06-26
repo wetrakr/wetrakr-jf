@@ -10,6 +10,7 @@ public class PluginConfiguration : BasePluginConfiguration
         ApiBaseUrl = "https://api.wetrakr.com";
         WebhookToken = string.Empty;
         Username = string.Empty;
+        PinnedUserId = string.Empty;
         ScrobblePlaying = true;
         ScrobbleWatched = true;
         ScrobbleRatings = true;
@@ -35,6 +36,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// config page "Connected as" label. Not used in auth.
     /// </summary>
     public string Username { get; set; }
+
+    /// <summary>
+    /// Jellyfin user id ("N" format) to restrict scrobbling to. When empty,
+    /// every user's playback is scrobbled (legacy behaviour). When set, only
+    /// events belonging to that user are dispatched.
+    /// </summary>
+    public string PinnedUserId { get; set; }
 
     /// <summary>Send PlaybackStart / Progress / Pause / Unpause / Stop events.</summary>
     public bool ScrobblePlaying { get; set; }

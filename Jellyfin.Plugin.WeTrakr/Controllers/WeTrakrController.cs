@@ -99,6 +99,7 @@ public class WeTrakrController : ControllerBase
         {
             Connected = !string.IsNullOrEmpty(cfg.WebhookToken),
             Username = cfg.Username,
+            PinnedUserId = cfg.PinnedUserId,
             ApiBaseUrl = cfg.ApiBaseUrl,
             ScrobblePlaying = cfg.ScrobblePlaying,
             ScrobbleWatched = cfg.ScrobbleWatched,
@@ -118,6 +119,14 @@ public class WeTrakrController : ControllerBase
         if (dto.ScrobblePlaying.HasValue) cfg.ScrobblePlaying = dto.ScrobblePlaying.Value;
         if (dto.ScrobbleWatched.HasValue) cfg.ScrobbleWatched = dto.ScrobbleWatched.Value;
         if (dto.ScrobbleRatings.HasValue) cfg.ScrobbleRatings = dto.ScrobbleRatings.Value;
+        // Normalise to dashless "N" form so it matches Guid.ToString("N") in
+        // ScrobbleManager regardless of which format the UI sends. "" clears the pin.
+        if (dto.PinnedUserId != null)
+        {
+            cfg.PinnedUserId = Guid.TryParse(dto.PinnedUserId, out var pinned)
+                ? pinned.ToString("N")
+                : string.Empty;
+        }
 
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
@@ -134,6 +143,7 @@ public class StatusSnapshot
 {
     public bool Connected { get; set; }
     public string Username { get; set; } = string.Empty;
+    public string PinnedUserId { get; set; } = string.Empty;
     public string ApiBaseUrl { get; set; } = string.Empty;
     public bool ScrobblePlaying { get; set; }
     public bool ScrobbleWatched { get; set; }
@@ -147,4 +157,5 @@ public class SettingsUpdateDto
     public bool? ScrobblePlaying { get; set; }
     public bool? ScrobbleWatched { get; set; }
     public bool? ScrobbleRatings { get; set; }
+    public string? PinnedUserId { get; set; }
 }
