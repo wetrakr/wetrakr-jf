@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.WeTrakr.Configuration;
@@ -8,13 +9,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public PluginConfiguration()
     {
         ApiBaseUrl = "https://api.wetrakr.com";
-        WebhookToken = string.Empty;
-        Username = string.Empty;
         ScrobblePlaying = true;
         ScrobbleWatched = true;
         ScrobbleRatings = true;
-        LastScrobbleAt = null;
-        ScrobbleCount = 0;
     }
 
     /// <summary>
@@ -22,19 +19,6 @@ public class PluginConfiguration : BasePluginConfiguration
     /// who self-host WeTrakr can override this.
     /// </summary>
     public string ApiBaseUrl { get; set; }
-
-    /// <summary>
-    /// Token issued by the WeTrakr device-code flow. Used as the path segment when
-    /// POSTing to /webhooks/jellyfin/{WebhookToken}.
-    /// Empty when the plugin is not yet connected.
-    /// </summary>
-    public string WebhookToken { get; set; }
-
-    /// <summary>
-    /// Display name of the WeTrakr user the plugin is paired with. Shown in the
-    /// config page "Connected as" label. Not used in auth.
-    /// </summary>
-    public string Username { get; set; }
 
     /// <summary>Send PlaybackStart / Progress / Pause / Unpause / Stop events.</summary>
     public bool ScrobblePlaying { get; set; }
@@ -45,7 +29,31 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Send UserDataSaved (ratings/favorites) events (reserved for plugin v3).</summary>
     public bool ScrobbleRatings { get; set; }
 
-    public DateTime? LastScrobbleAt { get; set; }
+    /// <summary>Per-user WeTrakr connections. Each user pairs their own account.</summary>
+    public Collection<UserConnection> UserConnections { get; set; } = new();
 
+    /// <summary>Find a user's connection by Jellyfin user id. Null if not connected.</summary>
+    public UserConnection? FindByUser(Guid userId)
+    {
+        var key = userId.ToString("N");
+        foreach (var c in UserConnections)
+        {
+            if (string.Equals(c.UserId, key, StringComparison.OrdinalIgnoreCase))
+            {
+                return c;
+            }
+        }
+
+        return null;
+    }
+}
+
+/// <summary>One Jellyfin user's WeTrakr pairing. Public parameterless ctor => XML-serializable.</summary>
+public class UserConnection
+{
+    public string UserId { get; set; } = string.Empty;        // Guid "N" (dashless)
+    public string WebhookToken { get; set; } = string.Empty;  // = OAuth access_token
+    public string Username { get; set; } = string.Empty;      // WeTrakr display name
+    public DateTime? LastScrobbleAt { get; set; }
     public long ScrobbleCount { get; set; }
 }

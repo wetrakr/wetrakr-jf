@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Configuration\connectPage.html" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect to WeTrakr</title>
+  <style>
+    :root { --wt: #770dfd; --wt2: #4d30c9; --bg: #101018; --card: #1a1a24; --muted: #9a9aa8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background: var(--bg); color: #f2f2f5; min-height: 100vh;
+           display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+    .card { background: var(--card); border: 1px solid #262633; border-radius: 14px;
+            width: 100%; max-width: 420px; padding: 2rem; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.25rem; }
+    p { color: var(--muted); line-height: 1.5; margin: 0.5rem 0; }
+    .logo { height: 56px; margin-bottom: 1rem; }
+    button { width: 100%; background: radial-gradient(circle at 15% -10%, var(--wt2), var(--wt) 84%);
+             color: #fff; border: none; border-radius: 9px; padding: 0.75rem 1rem;
+             font-size: 1rem; font-weight: 600; cursor: pointer; transition: filter .15s; }
+    button:hover { filter: brightness(1.12); }
+    button.ghost { background: none; border: 1px solid #33333f; color: #cfcfda; margin-top: 0.6rem; }
+    input { width: 100%; padding: 0.65rem 0.8rem; margin: 0.35rem 0; border-radius: 8px;
+            border: 1px solid #33333f; background: #12121a; color: #fff; font-size: 1rem; }
+    .code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 2.2rem;
+            letter-spacing: 0.35rem; text-align: center; padding: 1rem; margin: 1rem 0;
+            background: rgba(119,13,253,0.12); border: 1px solid var(--wt); border-radius: 10px; }
+    a { color: #a98bff; }
+    .hidden { display: none; }
+    .err { color: #ff6b6b; }
+    .stat { font-size: 0.85rem; opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="https://raw.githubusercontent.com/wetrakr/wetrakr-jf/master/branding/thumbnail.png"
+         alt="WeTrakr" onerror="this.style.display='none'" />
+
+    <div id="sLoading"><h1>WeTrakr</h1><p>Loading…</p></div>
+
+    <div id="sLogin" class="hidden">
+      <h1>Sign in</h1>
+      <p>Log in with your Jellyfin account to link WeTrakr.</p>
+      <input id="user" type="text" placeholder="Username" autocomplete="username" />
+      <input id="pass" type="password" placeholder="Password" autocomplete="current-password" />
+      <p id="loginErr" class="err hidden"></p>
+      <button id="loginBtn">Sign in</button>
+    </div>
+
+    <div id="sDisconnected" class="hidden">
+      <h1>Connect WeTrakr</h1>
+      <p>Link your WeTrakr account to scrobble what you watch on this server.</p>
+      <button id="connectBtn">Connect</button>
+    </div>
+
+    <div id="sPairing" class="hidden">
+      <h1>Enter this code</h1>
+      <p>Open <a id="verifyLink" href="#" target="_blank" rel="noopener">the activation page</a> and enter:</p>
+      <div class="code" id="userCode">------</div>
+      <p id="pairMsg">Waiting for confirmation…</p>
+      <button class="ghost" id="cancelBtn">Cancel</button>
+    </div>
+
+    <div id="sConnected" class="hidden">
+      <h1>Connected</h1>
+      <p>Scrobbling to WeTrakr as <strong id="wtName">-</strong>.</p>
+      <p class="stat" id="stat"></p>
+      <button class="ghost" id="disconnectBtn">Disconnect</button>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+    var POLL_MS = 5000;
+    var token = null, pollTimer = null;
+
+    // Same-origin paths. Strip trailing /Connect to reach the API + server root
+    // (handles reverse-proxy subpath deployments).
+    var apiBase = location.pathname.replace(/\/Connect\/?$/, '');
+    var serverRoot = apiBase.replace(/\/Plugins\/WeTrakr$/, '');
+
+    function $(id) { return document.getElementById(id); }
+    function show(id) {
+      ['sLoading', 'sLogin', 'sDisconnected', 'sPairing', 'sConnected']
+        .forEach(function (s) { $(s).classList.toggle('hidden', s !== id); });
+    }
+    function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+    function api(path, method) {
+      return fetch(apiBase + path, {
+        method: method || 'GET',
+        headers: { 'Authorization': 'MediaBrowser Token="' + token + '"' }
+      });
+    }
+
+    function bootstrap() {
+      try {
+        var raw = localStorage.getItem('jellyfin_credentials');
+        if (raw) {
+          var creds = JSON.parse(raw);
+          var srv = creds && creds.Servers && creds.Servers[0];
+          if (srv && srv.AccessToken) { token = srv.AccessToken; return refreshStatus(); }
+        }
+      } catch (e) { /* fall through to login */ }
+      show('sLogin');
+    }
+
+    function refreshStatus() {
+      return api('/Status').then(function (r) {
+        if (r.status === 401) { token = null; show('sLogin'); return; }
+        return r.json().then(function (s) {
+          if (s.Connected) {
+            $('wtName').textContent = s.Username || '(unknown)';
+            var last = s.LastScrobbleAt ? new Date(s.LastScrobbleAt).toLocaleString() : 'never';
+            $('stat').textContent = (s.ScrobbleCount || 0) + ' events sent — last ' + last;
+            show('sConnected');
+          } else {
+            show('sDisconnected');
+          }
+        });
+      }).catch(function () { show('sDisconnected'); });
+    }
+
+    function login() {
+      var u = $('user').value.trim(), p = $('pass').value;
+      $('loginErr').classList.add('hidden');
+      if (!u) return;
+      var auth = 'MediaBrowser Client="WeTrakr", Device="WeTrakr Connect", DeviceId="wetrakr-connect", Version="1.0.0"';
+      fetch(serverRoot + '/Users/AuthenticateByName', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+        body: JSON.stringify({ Username: u, Pw: p })
+      }).then(function (r) {
+        if (!r.ok) throw new Error('Invalid username or password.');
+        return r.json();
+      }).then(function (data) {
+        token = data.AccessToken;
+        refreshStatus();
+      }).catch(function (err) {
+        $('loginErr').textContent = err.message || 'Login failed.';
+        $('loginErr').classList.remove('hidden');
+      });
+    }
+
+    function startPairing() {
+      api('/ConnectStart', 'POST').then(function (r) {
+        if (r.status === 401) { token = null; show('sLogin'); return; }
+        return r.json().then(function (code) {
+          $('userCode').textContent = code.user_code || '------';
+          if (code.verification_url) $('verifyLink').href = code.verification_url;
+          $('pairMsg').textContent = 'Waiting for confirmation…';
+          $('pairMsg').classList.remove('err');
+          show('sPairing');
+          pollTimer = setInterval(pollToken, POLL_MS);
+        });
+      }).catch(function () { alert('Could not start pairing. Try again.'); });
+    }
+
+    function pollToken() {
+      api('/Poll', 'POST').then(function (r) {
+        if (r.status === 401) { stopPoll(); token = null; show('sLogin'); return null; }
+        return r.json();
+      }).then(function (res) {
+        if (!res) return;
+        if (res.Status === 'connected') { stopPoll(); refreshStatus(); }
+        else if (res.Status === 'authorization_pending') { $('pairMsg').textContent = 'Waiting for confirmation…'; }
+        else if (res.Status === 'expired_token' || res.Status === 'no_pending_code') {
+          stopPoll();
+          $('pairMsg').textContent = 'Code expired. Please start again.';
+          $('pairMsg').classList.add('err');
+          setTimeout(function () { show('sDisconnected'); }, 2500);
+        } else { $('pairMsg').textContent = 'Status: ' + res.Status; }
+      }).catch(function () { $('pairMsg').textContent = 'Network error. Retrying…'; });
+    }
+
+    function disconnect() {
+      if (!confirm('Disconnect WeTrakr? Your plays will stop scrobbling.')) return;
+      api('/Disconnect', 'POST').then(refreshStatus);
+    }
+
+    $('loginBtn').addEventListener('click', login);
+    $('pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
+    $('connectBtn').addEventListener('click', startPairing);
+    $('cancelBtn').addEventListener('click', function () { stopPoll(); show('sDisconnected'); });
+    $('disconnectBtn').addEventListener('click', disconnect);
+
+    bootstrap();
+  })();
+  </script>
+</body>
+</html>

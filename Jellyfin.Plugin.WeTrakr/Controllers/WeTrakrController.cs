@@ -1,5 +1,7 @@
-using Jellyfin.Plugin.WeTrakr.Api;
+using System;
+using System.Collections.ObjectModel;
 using Jellyfin.Plugin.WeTrakr.Configuration;
+using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -7,108 +9,56 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.WeTrakr.Controllers;
 
 /// <summary>
-/// HTTP endpoints exposed by the plugin under /Plugins/WeTrakr.
-/// Consumed exclusively from configPage.js in the plugin settings page.
-/// All endpoints require Jellyfin admin rights.
+/// Admin-only overview + global settings under /Plugins/WeTrakr/Admin.
+/// Consumed from configPage.html in the plugin settings page.
+/// The Admin/ prefix keeps these routes disjoint from the per-user controller.
 /// </summary>
 [ApiController]
-[Route("Plugins/WeTrakr")]
+[Route("Plugins/WeTrakr/Admin")]
 [Authorize(Policy = "RequiresElevation")]
 public class WeTrakrController : ControllerBase
 {
-    private readonly DeviceCodeClient _device;
+    private readonly IUserManager _userManager;
 
-    // In-memory, single-active-pairing state. The plugin only serves one admin,
-    // and the device code is short-lived (10 min). If admin reloads the config
-    // page mid-flow, they lose the pending code — that's acceptable UX.
-    private static string? _pendingDeviceCode;
-
-    public WeTrakrController(DeviceCodeClient device)
+    public WeTrakrController(IUserManager userManager)
     {
-        _device = device;
+        _userManager = userManager;
     }
 
-    /// <summary>Starts pairing: requests a user_code from WeTrakr.</summary>
-    [HttpPost("ConnectStart")]
-    public async Task<ActionResult<DeviceCodeResponse>> ConnectStart(CancellationToken ct)
-    {
-        var cfg = Plugin.Instance?.Configuration;
-        if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
-
-        var code = await _device.RequestCodeAsync(cfg.ApiBaseUrl, ct);
-        if (code == null) return StatusCode(StatusCodes.Status502BadGateway, new { error = "device_code_request_failed" });
-
-        _pendingDeviceCode = code.DeviceCode;
-        return code;
-    }
-
-    /// <summary>
-    /// Polls WeTrakr for the token. Persists it to plugin configuration on success.
-    /// Returns a status object the JS page uses to drive the state machine.
-    /// </summary>
-    [HttpPost("Poll")]
-    public async Task<ActionResult<PollStatus>> Poll(CancellationToken ct)
-    {
-        var cfg = Plugin.Instance?.Configuration;
-        if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
-
-        if (string.IsNullOrEmpty(_pendingDeviceCode))
-        {
-            return Ok(new PollStatus { Status = "no_pending_code" });
-        }
-
-        var result = await _device.PollTokenAsync(cfg.ApiBaseUrl, _pendingDeviceCode, ct);
-
-        if (!string.IsNullOrEmpty(result.AccessToken))
-        {
-            cfg.WebhookToken = result.AccessToken!;
-            cfg.Username = result.Username ?? string.Empty;
-            Plugin.Instance!.SaveConfiguration();
-            _pendingDeviceCode = null;
-            return Ok(new PollStatus { Status = "connected", Username = cfg.Username });
-        }
-
-        // Error codes from the backend: authorization_pending, expired_token, ...
-        return Ok(new PollStatus { Status = result.Error ?? "unknown" });
-    }
-
-    /// <summary>Clears the stored webhook token. The API-side state is kept intact.</summary>
-    [HttpPost("Disconnect")]
-    public ActionResult Disconnect()
-    {
-        var cfg = Plugin.Instance?.Configuration;
-        if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
-
-        cfg.WebhookToken = string.Empty;
-        cfg.Username = string.Empty;
-        cfg.LastScrobbleAt = null;
-        cfg.ScrobbleCount = 0;
-        Plugin.Instance!.SaveConfiguration();
-        _pendingDeviceCode = null;
-        return NoContent();
-    }
-
-    /// <summary>Returns current connection + settings snapshot.</summary>
+    /// <summary>Global settings snapshot + all connected users with resolved names.</summary>
     [HttpGet("Status")]
-    public ActionResult<StatusSnapshot> Status()
+    public ActionResult<AdminStatus> Status()
     {
         var cfg = Plugin.Instance?.Configuration;
         if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
 
-        return Ok(new StatusSnapshot
+        var users = new Collection<AdminConnection>();
+        lock (Plugin.ConfigLock)
         {
-            Connected = !string.IsNullOrEmpty(cfg.WebhookToken),
-            Username = cfg.Username,
+            foreach (var c in cfg.UserConnections)
+            {
+                users.Add(new AdminConnection
+                {
+                    UserId = c.UserId,
+                    JellyfinName = ResolveName(c.UserId) ?? string.Empty,
+                    WeTrakrName = c.Username,
+                    LastScrobbleAt = c.LastScrobbleAt,
+                    ScrobbleCount = c.ScrobbleCount
+                });
+            }
+        }
+
+        return Ok(new AdminStatus
+        {
             ApiBaseUrl = cfg.ApiBaseUrl,
             ScrobblePlaying = cfg.ScrobblePlaying,
             ScrobbleWatched = cfg.ScrobbleWatched,
             ScrobbleRatings = cfg.ScrobbleRatings,
-            LastScrobbleAt = cfg.LastScrobbleAt,
-            ScrobbleCount = cfg.ScrobbleCount
+            Users = users
         });
     }
 
-    /// <summary>Updates a single boolean setting. Other fields ignored.</summary>
+    /// <summary>Updates global settings. Only supplied fields change.</summary>
     [HttpPost("Settings")]
     public ActionResult UpdateSettings([FromBody] SettingsUpdateDto dto)
     {
@@ -118,26 +68,50 @@ public class WeTrakrController : ControllerBase
         if (dto.ScrobblePlaying.HasValue) cfg.ScrobblePlaying = dto.ScrobblePlaying.Value;
         if (dto.ScrobbleWatched.HasValue) cfg.ScrobbleWatched = dto.ScrobbleWatched.Value;
         if (dto.ScrobbleRatings.HasValue) cfg.ScrobbleRatings = dto.ScrobbleRatings.Value;
+        if (!string.IsNullOrWhiteSpace(dto.ApiBaseUrl)) cfg.ApiBaseUrl = dto.ApiBaseUrl.Trim();
 
-        Plugin.Instance!.SaveConfiguration();
+        lock (Plugin.ConfigLock)
+        {
+            Plugin.Instance!.SaveConfiguration();
+        }
+
         return NoContent();
+    }
+
+    // User entity type moved namespaces between Jellyfin versions; reflection keeps
+    // name resolution ABI-stable across the net8/net9 SDK targets.
+    private string? ResolveName(string dashlessId)
+    {
+        try
+        {
+            if (!Guid.TryParse(dashlessId, out var id)) return null;
+            object? user = _userManager.GetUserById(id);
+            if (user == null) return null;
+
+            var prop = user.GetType().GetProperty("Username") ?? user.GetType().GetProperty("Name");
+            return prop?.GetValue(user) as string;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 
-public class PollStatus
+public class AdminStatus
 {
-    public string Status { get; set; } = string.Empty;
-    public string? Username { get; set; }
-}
-
-public class StatusSnapshot
-{
-    public bool Connected { get; set; }
-    public string Username { get; set; } = string.Empty;
     public string ApiBaseUrl { get; set; } = string.Empty;
     public bool ScrobblePlaying { get; set; }
     public bool ScrobbleWatched { get; set; }
     public bool ScrobbleRatings { get; set; }
+    public Collection<AdminConnection> Users { get; set; } = new();
+}
+
+public class AdminConnection
+{
+    public string UserId { get; set; } = string.Empty;
+    public string JellyfinName { get; set; } = string.Empty;
+    public string WeTrakrName { get; set; } = string.Empty;
     public DateTime? LastScrobbleAt { get; set; }
     public long ScrobbleCount { get; set; }
 }
@@ -147,4 +121,5 @@ public class SettingsUpdateDto
     public bool? ScrobblePlaying { get; set; }
     public bool? ScrobbleWatched { get; set; }
     public bool? ScrobbleRatings { get; set; }
+    public string? ApiBaseUrl { get; set; }
 }

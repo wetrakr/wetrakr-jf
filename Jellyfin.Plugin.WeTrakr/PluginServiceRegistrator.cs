@@ -21,6 +21,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<DeviceCodeClient>();
         serviceCollection.AddSingleton<PauseStateTracker>();
         serviceCollection.AddSingleton<PayloadBuilder>();
+        serviceCollection.AddSingleton<PendingPairingStore>();
 
         // ScrobbleManager is a hosted service: Jellyfin starts/stops it with the server.
         serviceCollection.AddHostedService<ScrobbleManager>();

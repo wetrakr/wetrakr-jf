@@ -3,16 +3,13 @@
 <head>
     <title>WeTrakr</title>
     <style>
-      /* Scoped to the WeTrakr config page */
       #WeTrakrConfigPage a { color: rgb(121, 103, 255); text-decoration: none; }
       #WeTrakrConfigPage a:hover { text-decoration: underline; }
 
       /* Brand button — gradient matching WeTrakr web.
          !important is needed because the `is="emby-button"` custom element
          applies its own background with higher specificity at runtime. */
-      #WeTrakrConfigPage button#wtConnectBtn,
-      #WeTrakrConfigPage button#wtCancelPairingBtn,
-      #WeTrakrConfigPage button#wtDisconnectBtn {
+      #WeTrakrConfigPage button#wtCopyBtn {
         background:
           radial-gradient(circle at 15% -10%, rgb(77, 48, 201), #770dfd 84%),
           radial-gradient(circle at 90% 0%, transparent 35%),
@@ -25,16 +22,13 @@
         cursor: pointer;
         transition: filter 0.15s ease;
       }
-      #WeTrakrConfigPage button#wtConnectBtn:hover,
-      #WeTrakrConfigPage button#wtCancelPairingBtn:hover,
-      #WeTrakrConfigPage button#wtDisconnectBtn:hover {
-        filter: brightness(1.1);
-      }
-      #WeTrakrConfigPage button#wtConnectBtn span,
-      #WeTrakrConfigPage button#wtCancelPairingBtn span,
-      #WeTrakrConfigPage button#wtDisconnectBtn span {
-        color: #fff !important;
-      }
+      #WeTrakrConfigPage button#wtCopyBtn:hover { filter: brightness(1.1); }
+      #WeTrakrConfigPage button#wtCopyBtn span { color: #fff !important; }
+
+      #WeTrakrConfigPage table.wtUsers { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+      #WeTrakrConfigPage table.wtUsers th,
+      #WeTrakrConfigPage table.wtUsers td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      #WeTrakrConfigPage table.wtUsers th { opacity: 0.7; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -55,74 +49,43 @@
           <h2 class="sectionTitle" style="margin:0;">WeTrakr</h2>
         </div>
         <p class="fieldDescription">
-          Automatically send playback events to your WeTrakr profile. Movies and episodes are tracked — pause, resume and stop are detected from the player.
+          Every user connects their own WeTrakr account. Share the link below — users open it, sign in with their Jellyfin account and pair WeTrakr themselves. No admin access required.
         </p>
       </div>
 
-      <!-- Disconnected state -->
-      <div id="wtStateDisconnected" class="verticalSection" style="display:none">
-        <h3 class="sectionTitle">Not connected</h3>
-        <p class="fieldDescription">
-          Connect to your WeTrakr account to start scrobbling. You will need to confirm a short code on <strong>wetrakr.com/activate</strong>.
-        </p>
-        <button is="emby-button" type="button" class="raised button-submit" id="wtConnectBtn">
-          <span>Connect</span>
-        </button>
-      </div>
-
-      <!-- Pairing state -->
-      <div id="wtStatePairing" class="verticalSection" style="display:none">
-        <h3 class="sectionTitle">Enter this code on WeTrakr</h3>
-        <p class="fieldDescription">
-          Open <a id="wtVerificationLink" href="https://wetrakr.com/activate?platform=jellyfin" target="_blank" rel="noopener">wetrakr.com/activate</a> and enter the code below. This page will update automatically when you confirm it.
-        </p>
-        <div id="wtUserCodeBox" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 2.2rem; letter-spacing: 0.4rem; padding: 1rem 1.25rem; background: rgba(108,74,215,0.12); border: 1px solid #6c4ad7; border-radius: 8px; display: inline-block; margin: 0.5rem 0;">
-          <span id="wtUserCode">------</span>
+      <!-- Shareable connect link -->
+      <div class="verticalSection">
+        <h3 class="sectionTitle">Connect link for users</h3>
+        <div style="display:flex; gap:8px; align-items:center; max-width:640px;">
+          <input is="emby-input" type="text" id="wtConnectUrl" readonly style="flex:1;" />
+          <button is="emby-button" type="button" class="raised" id="wtCopyBtn"><span>Copy</span></button>
         </div>
-        <p id="wtPairingStatus" class="fieldDescription"></p>
-        <button is="emby-button" type="button" class="button" id="wtCancelPairingBtn">
-          <span>Cancel</span>
-        </button>
+        <p class="fieldDescription">Send this URL to your users (e.g. in your server welcome message).</p>
       </div>
 
-      <!-- Connected state -->
-      <div id="wtStateConnected" class="verticalSection" style="display:none">
-        <h3 class="sectionTitle">Connected</h3>
-        <p class="fieldDescription">
-          Scrobbling to WeTrakr as <strong id="wtUsername">-</strong>.
-          <br/>
-          <span id="wtStats" style="opacity:0.75"></span>
-        </p>
-
+      <!-- Global playback toggle -->
+      <div class="verticalSection">
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label>
             <input type="checkbox" is="emby-checkbox" id="wtTogglePlaying" />
-            <span>Track playback (start / progress / pause / resume / stop)</span>
+            <span>Enable playback scrobbling (server-wide)</span>
           </label>
           <div class="fieldDescription checkboxFieldDescription">
-            Disable to stop sending any playback events without disconnecting.
+            Master switch. When off, no playback events are sent for any user.
           </div>
         </div>
+      </div>
 
-        <div class="checkboxContainer checkboxContainer-withDescription">
-          <label>
-            <input type="checkbox" is="emby-checkbox" id="wtToggleWatched" />
-            <span>Track "mark as watched" (coming soon)</span>
-          </label>
-        </div>
-
-        <div class="checkboxContainer checkboxContainer-withDescription">
-          <label>
-            <input type="checkbox" is="emby-checkbox" id="wtToggleRatings" />
-            <span>Sync ratings and favorites (coming soon)</span>
-          </label>
-        </div>
-
-        <br/>
-
-        <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
-          <span>Disconnect</span>
-        </button>
+      <!-- Connected users -->
+      <div class="verticalSection">
+        <h3 class="sectionTitle">Connected users</h3>
+        <p class="fieldDescription" id="wtNoUsers">No users connected yet.</p>
+        <table class="wtUsers" id="wtUsersTable" style="display:none">
+          <thead>
+            <tr><th>Jellyfin user</th><th>WeTrakr</th><th>Events</th><th>Last scrobble</th></tr>
+          </thead>
+          <tbody id="wtUsersBody"></tbody>
+        </table>
       </div>
 
     </div>
@@ -132,128 +95,65 @@
   (function () {
     'use strict';
 
-    var PLUGIN_PATH = 'Plugins/WeTrakr';
-    var POLL_INTERVAL_MS = 5000;
-    var pollTimer = null;
+    var ADMIN_PATH = 'Plugins/WeTrakr/Admin';
 
     function $(id) { return document.getElementById(id); }
-
-    function showState(state) {
-      ['Disconnected', 'Pairing', 'Connected'].forEach(function (s) {
-        var el = $('wtState' + s);
-        if (el) el.style.display = (s === state) ? 'block' : 'none';
-      });
-    }
-
-    function stopPolling() {
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    }
-
-    function apiUrl(path) {
-      return ApiClient.getUrl(PLUGIN_PATH + '/' + path);
-    }
+    function apiUrl(path) { return ApiClient.getUrl(ADMIN_PATH + '/' + path); }
 
     function refreshStatus() {
       return ApiClient.getJSON(apiUrl('Status')).then(function (s) {
-        if (s.Connected) {
-          $('wtUsername').textContent = s.Username || '(unknown user)';
-          var last = s.LastScrobbleAt ? new Date(s.LastScrobbleAt).toLocaleString() : 'never';
-          $('wtStats').textContent = s.ScrobbleCount + ' events sent — last at ' + last;
-          $('wtTogglePlaying').checked = !!s.ScrobblePlaying;
-          $('wtToggleWatched').checked = !!s.ScrobbleWatched;
-          $('wtToggleRatings').checked = !!s.ScrobbleRatings;
-          showState('Connected');
-        } else {
-          showState('Disconnected');
-        }
+        $('wtTogglePlaying').checked = !!s.ScrobblePlaying;
+        renderUsers(s.Users || []);
       }).catch(function (err) {
-        console.error('[WeTrakr] Status error:', err, 'status:', err && err.status);
-        showState('Disconnected');
+        console.error('[WeTrakr] Status error:', err);
       });
     }
 
-    function describeError(err) {
-      if (!err) return 'Unknown error';
-      if (err.status !== undefined) {
-        return 'HTTP ' + err.status + (err.statusText ? ' ' + err.statusText : '');
+    function renderUsers(users) {
+      var body = $('wtUsersBody');
+      body.innerHTML = '';
+      if (!users.length) {
+        $('wtUsersTable').style.display = 'none';
+        $('wtNoUsers').style.display = 'block';
+        return;
       }
-      if (err.message) return err.message;
-      return String(err);
+      $('wtNoUsers').style.display = 'none';
+      $('wtUsersTable').style.display = 'table';
+      users.forEach(function (u) {
+        var tr = document.createElement('tr');
+        var last = u.LastScrobbleAt ? new Date(u.LastScrobbleAt).toLocaleString() : '—';
+        [u.JellyfinName || '(unknown)', u.WeTrakrName || '—', u.ScrobbleCount || 0, last]
+          .forEach(function (val) {
+            var td = document.createElement('td');
+            td.textContent = val;
+            tr.appendChild(td);
+          });
+        body.appendChild(tr);
+      });
     }
 
-    function alertError(prefix, err) {
-      Dashboard.hideLoadingMsg();
-      console.error('[WeTrakr]', prefix, err);
-      var base = prefix + ': ' + describeError(err);
-      // If we have a Response with a body, try to show it.
-      if (err && typeof err.text === 'function') {
-        err.text().then(function (body) {
-          var extra = body ? ('\n\n' + body.substring(0, 300)) : '';
-          Dashboard.alert({ message: base + extra, title: 'WeTrakr' });
-        }).catch(function () {
-          Dashboard.alert({ message: base, title: 'WeTrakr' });
-        });
+    function setConnectUrl() {
+      var base = ApiClient.serverAddress() || (location.origin);
+      $('wtConnectUrl').value = base.replace(/\/$/, '') + '/Plugins/WeTrakr/Connect';
+    }
+
+    function copyUrl() {
+      var input = $('wtConnectUrl');
+      input.select();
+      var done = function () { flashCopied(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).then(done, function () { document.execCommand('copy'); done(); });
       } else {
-        Dashboard.alert({ message: base, title: 'WeTrakr' });
+        document.execCommand('copy');
+        done();
       }
     }
 
-    function startPairing() {
-      Dashboard.showLoadingMsg();
-      ApiClient.ajax({ type: 'POST', url: apiUrl('ConnectStart') })
-        .then(function (res) { return res.json(); })
-        .then(function (code) {
-          Dashboard.hideLoadingMsg();
-          $('wtUserCode').textContent = code.user_code;
-          if (code.verification_url) {
-            $('wtVerificationLink').href = code.verification_url;
-            $('wtVerificationLink').textContent = code.verification_url;
-          }
-          $('wtPairingStatus').textContent = 'Waiting for confirmation…';
-          showState('Pairing');
-          pollTimer = setInterval(pollForToken, POLL_INTERVAL_MS);
-        })
-        .catch(function (err) { alertError('Could not start pairing', err); });
-    }
-
-    function pollForToken() {
-      ApiClient.ajax({ type: 'POST', url: apiUrl('Poll') })
-        .then(function (res) { return res.json(); })
-        .then(function (result) {
-          if (result.Status === 'connected') {
-            stopPolling();
-            refreshStatus();
-          } else if (result.Status === 'expired_token') {
-            stopPolling();
-            $('wtPairingStatus').textContent = 'Code expired. Please start again.';
-            setTimeout(function () { showState('Disconnected'); }, 2500);
-          } else if (result.Status === 'authorization_pending') {
-            $('wtPairingStatus').textContent = 'Waiting for confirmation…';
-          } else if (result.Status === 'no_pending_code') {
-            stopPolling();
-            showState('Disconnected');
-          } else {
-            $('wtPairingStatus').textContent = 'Status: ' + result.Status;
-          }
-        })
-        .catch(function () {
-          $('wtPairingStatus').textContent = 'Network error. Retrying…';
-        });
-    }
-
-    function cancelPairing() {
-      stopPolling();
-      showState('Disconnected');
-    }
-
-    function disconnect() {
-      if (!confirm('Disconnect WeTrakr? Playback will stop scrobbling until you reconnect.')) return;
-      Dashboard.showLoadingMsg();
-      ApiClient.ajax({ type: 'POST', url: apiUrl('Disconnect') })
-        .then(function () {
-          Dashboard.hideLoadingMsg();
-          refreshStatus();
-        });
+    function flashCopied() {
+      var span = $('wtCopyBtn').querySelector('span');
+      var prev = span.textContent;
+      span.textContent = 'Copied';
+      setTimeout(function () { span.textContent = prev; }, 1500);
     }
 
     function updateSetting(key, value) {
@@ -268,12 +168,8 @@
     }
 
     function bindHandlers() {
-      $('wtConnectBtn').addEventListener('click', startPairing);
-      $('wtCancelPairingBtn').addEventListener('click', cancelPairing);
-      $('wtDisconnectBtn').addEventListener('click', disconnect);
+      $('wtCopyBtn').addEventListener('click', copyUrl);
       $('wtTogglePlaying').addEventListener('change', function (e) { updateSetting('ScrobblePlaying', e.target.checked); });
-      $('wtToggleWatched').addEventListener('change', function (e) { updateSetting('ScrobbleWatched', e.target.checked); });
-      $('wtToggleRatings').addEventListener('change', function (e) { updateSetting('ScrobbleRatings', e.target.checked); });
     }
 
     var page = document.querySelector('#WeTrakrConfigPage');
@@ -281,14 +177,13 @@
 
     page.addEventListener('pageshow', function () {
       bindHandlers();
+      setConnectUrl();
       refreshStatus();
     });
 
-    page.addEventListener('pagehide', stopPolling);
-
-    // Also bind immediately in case the page is already visible (direct navigation).
     if (page.offsetParent !== null) {
       bindHandlers();
+      setConnectUrl();
       refreshStatus();
     }
   })();

@@ -106,11 +106,13 @@ public class ScrobbleManager : IHostedService
 
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
-            if (string.IsNullOrEmpty(config.WebhookToken)) return;   // not paired yet
             if (!config.ScrobblePlaying) return;                      // user disabled
 
+            var target = ResolveTarget(config, session.UserId);
+            if (target == null) return;                               // this user not connected
+
             var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played);
-            await _client.SendAsync(config, payload, CancellationToken.None);
+            await _client.SendAsync(config.ApiBaseUrl, target.WebhookToken, payload, target, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -153,7 +155,9 @@ public class ScrobbleManager : IHostedService
         {
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
-            if (string.IsNullOrEmpty(config.WebhookToken)) return;
+
+            var target = ResolveTarget(config, e.UserId);
+            if (target == null) return;   // this user not connected
 
             if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
             if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
@@ -164,7 +168,7 @@ public class ScrobbleManager : IHostedService
             var userName = TryGetUserName(e);
 
             var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString());
-            await _client.SendAsync(config, payload, CancellationToken.None);
+            await _client.SendAsync(config.ApiBaseUrl, target.WebhookToken, payload, target, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -186,6 +190,15 @@ public class ScrobbleManager : IHostedService
         catch
         {
             return null;
+        }
+    }
+
+    // Resolve the WeTrakr connection for the playing user, or null if unconnected.
+    private static UserConnection? ResolveTarget(PluginConfiguration config, Guid userId)
+    {
+        lock (Plugin.ConfigLock)
+        {
+            return config.FindByUser(userId);
         }
     }
 
