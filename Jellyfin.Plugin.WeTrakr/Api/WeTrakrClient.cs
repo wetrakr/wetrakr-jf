@@ -15,6 +15,10 @@ public class WeTrakrClient
     private readonly IHttpClientFactory _factory;
     private readonly ILogger<WeTrakrClient> _logger;
 
+    // UtcNow.Ticks until which all sends are suppressed after a 429. Shared across
+    // users because the API rate limit is per server IP, not per token.
+    private long _pausedUntilTicks;
+
     public WeTrakrClient(IHttpClientFactory factory, ILogger<WeTrakrClient> logger)
     {
         _factory = factory;
@@ -28,6 +32,12 @@ public class WeTrakrClient
             return;
         }
 
+        // Honor an active back-off window from a previous 429.
+        if (DateTime.UtcNow.Ticks < Volatile.Read(ref _pausedUntilTicks))
+        {
+            return;
+        }
+
         var url = $"{apiBaseUrl.TrimEnd('/')}/webhooks/jellyfin/{webhookToken}";
         var http = _factory.CreateClient(HttpClientNames.WeTrakr);
         http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent.Value);
@@ -37,6 +47,18 @@ public class WeTrakrClient
             try
             {
                 var response = await http.PostAsJsonAsync(url, payload, ct).ConfigureAwait(false);
+
+                // Rate limited — open a global back-off window so all users pause
+                // together (the limit is per server, not per token) instead of hammering.
+                if ((int)response.StatusCode == 429)
+                {
+                    var delay = GetRetryAfter(response) ?? TimeSpan.FromSeconds(30);
+                    Volatile.Write(ref _pausedUntilTicks, DateTime.UtcNow.Add(delay).Ticks);
+                    _logger.LogWarning("[WeTrakr] Rate limited (429); backing off {Seconds}s for all users. Headers: {Headers}",
+                        (int)delay.TotalSeconds, FormatRateLimitHeaders(response));
+                    return;
+                }
+
                 response.EnsureSuccessStatusCode();
 
                 // Per-user bookkeeping — best-effort. Persist only on non-progress
@@ -62,6 +84,35 @@ public class WeTrakrClient
                 return;
             }
         }
+    }
+
+    // Retry-After may be a delta (seconds) or an HTTP date; return whichever is set.
+    private static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        var ra = response.Headers.RetryAfter;
+        if (ra?.Delta is { } delta) return delta;
+        if (ra?.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
+        }
+
+        return null;
+    }
+
+    private static string FormatRateLimitHeaders(HttpResponseMessage response)
+    {
+        var parts = new List<string>();
+        foreach (var h in response.Headers)
+        {
+            if (h.Key.Contains("RateLimit", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(h.Key, "Retry-After", StringComparison.OrdinalIgnoreCase))
+            {
+                parts.Add($"{h.Key}={string.Join(",", h.Value)}");
+            }
+        }
+
+        return parts.Count > 0 ? string.Join("; ", parts) : "(none)";
     }
 }
 

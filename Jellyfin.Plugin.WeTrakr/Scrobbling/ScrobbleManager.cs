@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -34,6 +35,12 @@ public class ScrobbleManager : IHostedService
     private readonly PayloadBuilder _builder;
     private readonly PauseStateTracker _paused;
     private readonly ILogger<ScrobbleManager> _logger;
+
+    // Jellyfin raises PlaybackProgress ~every 10s per session; we forward at most
+    // one every 30s (dropping the ones in between) so many concurrent users don't
+    // flood the API. State changes (start/stop/pause) are never throttled.
+    private static readonly TimeSpan ProgressInterval = TimeSpan.FromSeconds(30);
+    private readonly ConcurrentDictionary<string, DateTime> _lastProgress = new();
 
     public ScrobbleManager(
         ISessionManager sessions,
@@ -78,6 +85,7 @@ public class ScrobbleManager : IHostedService
     {
         var key = SessionKey(e);
         _paused.Remove(key);
+        _lastProgress.TryRemove(key, out _);
         _ = DispatchAsync(e, "PlaybackStop", isPaused: false, played: e.PlayedToCompletion);
     }
 
@@ -92,7 +100,19 @@ public class ScrobbleManager : IHostedService
         else eventName = "PlaybackProgress";
 
         _paused.Set(key, e.IsPaused);
+
+        if (eventName == "PlaybackProgress" && !ShouldSendProgress(key)) return;
+
         _ = DispatchAsync(e, eventName, e.IsPaused, played: false);
+    }
+
+    // True at most once per ProgressInterval per session.
+    private bool ShouldSendProgress(string key)
+    {
+        var now = DateTime.UtcNow;
+        if (_lastProgress.TryGetValue(key, out var last) && now - last < ProgressInterval) return false;
+        _lastProgress[key] = now;
+        return true;
     }
 
     private async Task DispatchAsync(PlaybackProgressEventArgs e, string eventName, bool isPaused, bool played)
