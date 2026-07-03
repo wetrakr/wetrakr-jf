@@ -85,7 +85,11 @@ public class WeTrakrController : ControllerBase
         try
         {
             if (!Guid.TryParse(dashlessId, out var id)) return null;
-            object? user = _userManager.GetUserById(id);
+
+            // GetUserById's return type differs across 10.10/10.11, so a direct call
+            // throws MissingMethodException at JIT (uncatchable here). Invoke reflectively.
+            var method = _userManager.GetType().GetMethod("GetUserById", new[] { typeof(Guid) });
+            var user = method?.Invoke(_userManager, new object[] { id });
             if (user == null) return null;
 
             var prop = user.GetType().GetProperty("Username") ?? user.GetType().GetProperty("Name");
