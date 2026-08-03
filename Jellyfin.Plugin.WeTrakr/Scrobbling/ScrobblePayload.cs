@@ -18,6 +18,16 @@ public class ScrobblePayload
     [JsonPropertyName("user_name")]
     public string UserName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// True when the event comes from the Jellyfin account that paired the
+    /// plugin with WeTrakr. The API uses it as the most reliable signal to bind
+    /// the connection to the right account on a shared server; when it is false
+    /// for every event (old pairings, generic webhook plugin) the API falls back
+    /// to matching the username.
+    /// </summary>
+    [JsonPropertyName("is_owner")]
+    public bool IsOwner { get; set; }
+
     [JsonPropertyName("item_id")]
     public string ItemId { get; set; } = string.Empty;
 

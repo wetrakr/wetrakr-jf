@@ -109,7 +109,7 @@ public class ScrobbleManager : IHostedService
             if (string.IsNullOrEmpty(config.WebhookToken)) return;   // not paired yet
             if (!config.ScrobblePlaying) return;                      // user disabled
 
-            var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played);
+            var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played, config.OwnerUserId);
             await _client.SendAsync(config, payload, CancellationToken.None);
         }
         catch (Exception ex)
@@ -163,7 +163,7 @@ public class ScrobbleManager : IHostedService
             // User entity namespace this reflection keeps us safe.
             var userName = TryGetUserName(e);
 
-            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString());
+            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString(), config.OwnerUserId);
             await _client.SendAsync(config, payload, CancellationToken.None);
         }
         catch (Exception ex)
