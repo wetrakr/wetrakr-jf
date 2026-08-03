@@ -63,6 +63,10 @@ public class WeTrakrController : ControllerBase
         {
             cfg.WebhookToken = result.AccessToken!;
             cfg.Username = result.Username ?? string.Empty;
+            // Remember WHICH Jellyfin account paired the plugin: their events
+            // carry is_owner=true so WeTrakr binds the connection to them and
+            // not to whoever happens to press play first on a shared server.
+            cfg.OwnerUserId = TryGetCallerUserId();
             Plugin.Instance!.SaveConfiguration();
             _pendingDeviceCode = null;
             return Ok(new PollStatus { Status = "connected", Username = cfg.Username });
@@ -70,6 +74,34 @@ public class WeTrakrController : ControllerBase
 
         // Error codes from the backend: authorization_pending, expired_token, ...
         return Ok(new PollStatus { Status = result.Error ?? "unknown" });
+    }
+
+    /// <summary>
+    /// Jellyfin user id of the caller, read straight from the auth claim.
+    /// Claim names are read as plain strings on purpose: the helper extensions
+    /// that expose them moved namespaces between Jellyfin versions, and a
+    /// missing id is harmless (the API falls back to its own owner detection).
+    /// </summary>
+    private string TryGetCallerUserId()
+    {
+        try
+        {
+            var principal = HttpContext?.User;
+            if (principal == null) return string.Empty;
+
+            var claim = principal.FindFirst("Jellyfin-UserId")
+                     ?? principal.FindFirst("Jellyfin-User-Id")
+                     ?? principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+
+            var raw = claim?.Value;
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+
+            return Guid.TryParse(raw, out var id) ? id.ToString("N") : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     /// <summary>Clears the stored webhook token. The API-side state is kept intact.</summary>
@@ -81,6 +113,7 @@ public class WeTrakrController : ControllerBase
 
         cfg.WebhookToken = string.Empty;
         cfg.Username = string.Empty;
+        cfg.OwnerUserId = string.Empty;
         cfg.LastScrobbleAt = null;
         cfg.ScrobbleCount = 0;
         Plugin.Instance!.SaveConfiguration();

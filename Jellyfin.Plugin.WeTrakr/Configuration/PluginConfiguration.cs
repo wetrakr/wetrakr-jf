@@ -10,6 +10,7 @@ public class PluginConfiguration : BasePluginConfiguration
         ApiBaseUrl = "https://api.wetrakr.com";
         WebhookToken = string.Empty;
         Username = string.Empty;
+        OwnerUserId = string.Empty;
         ScrobblePlaying = true;
         ScrobbleWatched = true;
         ScrobbleRatings = true;
@@ -35,6 +36,15 @@ public class PluginConfiguration : BasePluginConfiguration
     /// config page "Connected as" label. Not used in auth.
     /// </summary>
     public string Username { get; set; }
+
+    /// <summary>
+    /// Jellyfin user id (GUID "N" format) of the account that paired the plugin
+    /// with WeTrakr. Events coming from this account are flagged is_owner=true so
+    /// the API can bind the connection to the right person on a shared server
+    /// instead of guessing from whoever plays first. Empty when the pairing
+    /// predates this field or the id could not be read from the request.
+    /// </summary>
+    public string OwnerUserId { get; set; }
 
     /// <summary>Send PlaybackStart / Progress / Pause / Unpause / Stop events.</summary>
     public bool ScrobblePlaying { get; set; }
