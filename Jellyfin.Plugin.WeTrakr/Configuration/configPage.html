@@ -35,13 +35,19 @@
       #WeTrakrConfigPage button#wtDisconnectBtn span {
         color: #fff !important;
       }
+      #WeTrakrConfigPage .wtLinkedBadge {
+        display: inline-block;
+        font-size: 0.8em;
+        opacity: 0.75;
+        margin-left: 0.4rem;
+      }
     </style>
 </head>
 <body>
 <div id="WeTrakrConfigPage"
      data-role="page"
      class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-checkbox">
+     data-require="emby-input,emby-button,emby-checkbox,emby-select">
 
   <div data-role="content">
     <div class="content-primary">
@@ -56,14 +62,40 @@
         </div>
         <p class="fieldDescription">
           Automatically send playback events to your WeTrakr profile. Movies and episodes are tracked — pause, resume and stop are detected from the player.
+          Every Jellyfin account can be connected to its own WeTrakr account; accounts left unconnected are never sent anywhere.
         </p>
+      </div>
+
+      <!-- Account picker -->
+      <div class="verticalSection">
+        <div class="selectContainer">
+          <label class="selectLabel" for="wtUserSelect">Configure WeTrakr for:</label>
+          <select is="emby-select" id="wtUserSelect" class="emby-select"></select>
+          <div class="fieldDescription">
+            Each account confirms the code with their own WeTrakr login, so you never see their credentials.
+          </div>
+        </div>
+      </div>
+
+      <!-- Legacy pairing warning -->
+      <div id="wtLegacyNotice" class="verticalSection" style="display:none">
+        <p class="fieldDescription" style="border-left:3px solid #6c4ad7; padding-left:0.75rem;">
+          This server is still using the old single-account pairing (connected as
+          <strong id="wtLegacyUsername">-</strong>): playback from every Jellyfin account is
+          sent to that WeTrakr profile, which then filters it. Connect the accounts below to
+          give each person their own profile, or drop it to stop scrobbling entirely.
+        </p>
+        <button is="emby-button" type="button" class="button" id="wtDropLegacyBtn">
+          <span>Remove old pairing</span>
+        </button>
       </div>
 
       <!-- Disconnected state -->
       <div id="wtStateDisconnected" class="verticalSection" style="display:none">
         <h3 class="sectionTitle">Not connected</h3>
         <p class="fieldDescription">
-          Connect to your WeTrakr account to start scrobbling. You will need to confirm a short code on <strong>wetrakr.com/activate</strong>.
+          <strong id="wtDisconnectedUser">This account</strong> is not linked to WeTrakr, so nothing it plays is scrobbled.
+          Connecting needs a short code confirmed on <strong>wetrakr.com/activate</strong>.
         </p>
         <button is="emby-button" type="button" class="raised button-submit" id="wtConnectBtn">
           <span>Connect</span>
@@ -74,7 +106,9 @@
       <div id="wtStatePairing" class="verticalSection" style="display:none">
         <h3 class="sectionTitle">Enter this code on WeTrakr</h3>
         <p class="fieldDescription">
-          Open <a id="wtVerificationLink" href="https://wetrakr.com/activate?platform=jellyfin" target="_blank" rel="noopener">wetrakr.com/activate</a> and enter the code below. This page will update automatically when you confirm it.
+          <strong id="wtPairingUser">This account</strong> must open
+          <a id="wtVerificationLink" href="https://wetrakr.com/activate?platform=jellyfin" target="_blank" rel="noopener">wetrakr.com/activate</a>
+          while logged into their own WeTrakr account and enter the code below. This page will update automatically when they confirm it.
         </p>
         <div id="wtUserCodeBox" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 2.2rem; letter-spacing: 0.4rem; padding: 1rem 1.25rem; background: rgba(108,74,215,0.12); border: 1px solid #6c4ad7; border-radius: 8px; display: inline-block; margin: 0.5rem 0;">
           <span id="wtUserCode">------</span>
@@ -89,10 +123,19 @@
       <div id="wtStateConnected" class="verticalSection" style="display:none">
         <h3 class="sectionTitle">Connected</h3>
         <p class="fieldDescription">
-          Scrobbling to WeTrakr as <strong id="wtUsername">-</strong>.
+          <strong id="wtJellyfinUser">This account</strong> scrobbles to WeTrakr as <strong id="wtUsername">-</strong>.
           <br/>
           <span id="wtStats" style="opacity:0.75"></span>
         </p>
+        <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
+          <span>Disconnect this account</span>
+        </button>
+      </div>
+
+      <!-- Server-wide event settings -->
+      <div id="wtEventSettings" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Events</h3>
+        <p class="fieldDescription">Applies to every connected account on this server.</p>
 
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label>
@@ -117,12 +160,6 @@
             <span>Sync ratings and favorites (coming soon)</span>
           </label>
         </div>
-
-        <br/>
-
-        <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
-          <span>Disconnect</span>
-        </button>
       </div>
 
     </div>
@@ -135,8 +172,29 @@
     var PLUGIN_PATH = 'Plugins/WeTrakr';
     var POLL_INTERVAL_MS = 5000;
     var pollTimer = null;
+    var bound = false;
+
+    // Last Status snapshot + the Jellyfin accounts of this server, so switching
+    // the dropdown re-renders without another round trip.
+    var snapshot = { Links: [] };
+    var jellyfinUsers = [];
 
     function $(id) { return document.getElementById(id); }
+
+    // Jellyfin hands out ids both dashed and undashed depending on endpoint.
+    function normId(id) { return (id || '').toString().replace(/-/g, '').toLowerCase(); }
+
+    function selectedUser() {
+      var sel = $('wtUserSelect');
+      var id = sel ? sel.value : '';
+      return jellyfinUsers.filter(function (u) { return normId(u.Id) === normId(id); })[0] || null;
+    }
+
+    function linkFor(userId) {
+      return (snapshot.Links || []).filter(function (l) {
+        return normId(l.UserId) === normId(userId);
+      })[0] || null;
+    }
 
     function showState(state) {
       ['Disconnected', 'Pairing', 'Connected'].forEach(function (s) {
@@ -153,22 +211,96 @@
       return ApiClient.getUrl(PLUGIN_PATH + '/' + path);
     }
 
+    function postJson(path, body) {
+      return ApiClient.ajax({
+        type: 'POST',
+        url: apiUrl(path),
+        data: JSON.stringify(body || {}),
+        contentType: 'application/json'
+      });
+    }
+
+    function renderUserOptions() {
+      var sel = $('wtUserSelect');
+      if (!sel) return;
+      var previous = sel.value;
+
+      sel.innerHTML = jellyfinUsers.map(function (u) {
+        var link = linkFor(u.Id);
+        var suffix = link ? ' — ' + (link.Username || 'connected') : '';
+        return '<option value="' + u.Id + '">' + escapeHtml(u.Name) + escapeHtml(suffix) + '</option>';
+      }).join('');
+
+      // Keep the admin on the account they were looking at; default to their own.
+      var keep = jellyfinUsers.some(function (u) { return u.Id === previous; })
+        ? previous
+        : currentUserId();
+      if (keep) sel.value = keep;
+      if (!sel.value && jellyfinUsers.length) sel.value = jellyfinUsers[0].Id;
+    }
+
+    function currentUserId() {
+      try {
+        var id = ApiClient.getCurrentUserId();
+        return jellyfinUsers.some(function (u) { return normId(u.Id) === normId(id); }) ? id : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function escapeHtml(s) {
+      return (s || '').replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function renderSelected() {
+      var user = selectedUser();
+      var link = user ? linkFor(user.Id) : null;
+      var name = user ? user.Name : 'This account';
+
+      $('wtDisconnectedUser').textContent = name;
+      $('wtPairingUser').textContent = name;
+      $('wtJellyfinUser').textContent = name;
+
+      if (link) {
+        $('wtUsername').textContent = link.Username || '(unknown user)';
+        var last = link.LastScrobbleAt ? new Date(link.LastScrobbleAt).toLocaleString() : 'never';
+        $('wtStats').textContent = link.ScrobbleCount + ' events sent — last at ' + last;
+        showState('Connected');
+      } else {
+        showState('Disconnected');
+      }
+
+      $('wtEventSettings').style.display =
+        ((snapshot.Links || []).length || snapshot.LegacyMode) ? 'block' : 'none';
+
+      $('wtLegacyNotice').style.display = snapshot.LegacyMode ? 'block' : 'none';
+      if (snapshot.LegacyMode) {
+        $('wtLegacyUsername').textContent = snapshot.LegacyUsername || '(unknown user)';
+      }
+    }
+
     function refreshStatus() {
       return ApiClient.getJSON(apiUrl('Status')).then(function (s) {
-        if (s.Connected) {
-          $('wtUsername').textContent = s.Username || '(unknown user)';
-          var last = s.LastScrobbleAt ? new Date(s.LastScrobbleAt).toLocaleString() : 'never';
-          $('wtStats').textContent = s.ScrobbleCount + ' events sent — last at ' + last;
-          $('wtTogglePlaying').checked = !!s.ScrobblePlaying;
-          $('wtToggleWatched').checked = !!s.ScrobbleWatched;
-          $('wtToggleRatings').checked = !!s.ScrobbleRatings;
-          showState('Connected');
-        } else {
-          showState('Disconnected');
-        }
+        snapshot = s || { Links: [] };
+        $('wtTogglePlaying').checked = !!snapshot.ScrobblePlaying;
+        $('wtToggleWatched').checked = !!snapshot.ScrobbleWatched;
+        $('wtToggleRatings').checked = !!snapshot.ScrobbleRatings;
+        renderUserOptions();
+        renderSelected();
       }).catch(function (err) {
         console.error('[WeTrakr] Status error:', err, 'status:', err && err.status);
         showState('Disconnected');
+      });
+    }
+
+    function loadUsers() {
+      return ApiClient.getUsers().then(function (users) {
+        jellyfinUsers = (users || []).map(function (u) { return { Id: u.Id, Name: u.Name }; });
+      }).catch(function (err) {
+        console.error('[WeTrakr] Could not list Jellyfin users:', err);
+        jellyfinUsers = [];
       });
     }
 
@@ -199,8 +331,11 @@
     }
 
     function startPairing() {
+      var user = selectedUser();
+      if (!user) return;
+
       Dashboard.showLoadingMsg();
-      ApiClient.ajax({ type: 'POST', url: apiUrl('ConnectStart') })
+      postJson('ConnectStart', { UserId: user.Id, UserName: user.Name })
         .then(function (res) { return res.json(); })
         .then(function (code) {
           Dashboard.hideLoadingMsg();
@@ -211,6 +346,7 @@
           }
           $('wtPairingStatus').textContent = 'Waiting for confirmation…';
           showState('Pairing');
+          stopPolling();
           pollTimer = setInterval(pollForToken, POLL_INTERVAL_MS);
         })
         .catch(function (err) { alertError('Could not start pairing', err); });
@@ -222,16 +358,23 @@
         .then(function (result) {
           if (result.Status === 'connected') {
             stopPolling();
+            if (result.StaleLinksRemoved) {
+              Dashboard.alert({
+                title: 'WeTrakr',
+                message: 'That WeTrakr account was already linked to another Jellyfin account. '
+                       + 'A WeTrakr account can only receive events from one Jellyfin account, so the older link was removed.'
+              });
+            }
             refreshStatus();
           } else if (result.Status === 'expired_token') {
             stopPolling();
             $('wtPairingStatus').textContent = 'Code expired. Please start again.';
-            setTimeout(function () { showState('Disconnected'); }, 2500);
+            setTimeout(renderSelected, 2500);
           } else if (result.Status === 'authorization_pending') {
             $('wtPairingStatus').textContent = 'Waiting for confirmation…';
           } else if (result.Status === 'no_pending_code') {
             stopPolling();
-            showState('Disconnected');
+            renderSelected();
           } else {
             $('wtPairingStatus').textContent = 'Status: ' + result.Status;
           }
@@ -243,53 +386,79 @@
 
     function cancelPairing() {
       stopPolling();
-      showState('Disconnected');
+      postJson('CancelPairing').catch(function () { /* best effort */ });
+      renderSelected();
     }
 
     function disconnect() {
-      if (!confirm('Disconnect WeTrakr? Playback will stop scrobbling until you reconnect.')) return;
+      var user = selectedUser();
+      if (!user) return;
+      if (!confirm('Disconnect ' + user.Name + ' from WeTrakr? Their playback will stop scrobbling until reconnected.')) return;
+
       Dashboard.showLoadingMsg();
-      ApiClient.ajax({ type: 'POST', url: apiUrl('Disconnect') })
+      postJson('Disconnect', { UserId: user.Id })
         .then(function () {
           Dashboard.hideLoadingMsg();
           refreshStatus();
-        });
+        })
+        .catch(function (err) { alertError('Could not disconnect', err); });
+    }
+
+    function dropLegacy() {
+      if (!confirm('Remove the old server-wide pairing? Accounts that are not connected individually will stop scrobbling.')) return;
+      Dashboard.showLoadingMsg();
+      postJson('Disconnect', {})
+        .then(function () {
+          Dashboard.hideLoadingMsg();
+          refreshStatus();
+        })
+        .catch(function (err) { alertError('Could not remove the old pairing', err); });
     }
 
     function updateSetting(key, value) {
       var body = {};
       body[key] = value;
-      return ApiClient.ajax({
-        type: 'POST',
-        url: apiUrl('Settings'),
-        data: JSON.stringify(body),
-        contentType: 'application/json'
-      });
+      return postJson('Settings', body);
+    }
+
+    function onUserChanged() {
+      // Switching accounts abandons any pairing in flight: drop the pending
+      // code server-side too, so a stray confirmation can't land on the
+      // account the admin just moved away from.
+      if (pollTimer) {
+        stopPolling();
+        postJson('CancelPairing').catch(function () { /* best effort */ });
+      }
+      renderSelected();
     }
 
     function bindHandlers() {
+      if (bound) return;
+      bound = true;
+      $('wtUserSelect').addEventListener('change', onUserChanged);
       $('wtConnectBtn').addEventListener('click', startPairing);
       $('wtCancelPairingBtn').addEventListener('click', cancelPairing);
       $('wtDisconnectBtn').addEventListener('click', disconnect);
+      $('wtDropLegacyBtn').addEventListener('click', dropLegacy);
       $('wtTogglePlaying').addEventListener('change', function (e) { updateSetting('ScrobblePlaying', e.target.checked); });
       $('wtToggleWatched').addEventListener('change', function (e) { updateSetting('ScrobbleWatched', e.target.checked); });
       $('wtToggleRatings').addEventListener('change', function (e) { updateSetting('ScrobbleRatings', e.target.checked); });
     }
 
+    function initPage() {
+      bindHandlers();
+      loadUsers().then(refreshStatus);
+    }
+
     var page = document.querySelector('#WeTrakrConfigPage');
     if (!page) return;
 
-    page.addEventListener('pageshow', function () {
-      bindHandlers();
-      refreshStatus();
-    });
-
+    page.addEventListener('pageshow', initPage);
     page.addEventListener('pagehide', stopPolling);
 
-    // Also bind immediately in case the page is already visible (direct navigation).
+    // Also init immediately in case the page is already visible (direct navigation).
     if (page.offsetParent !== null) {
-      bindHandlers();
-      refreshStatus();
+      initPage();
     }
   })();
   </script>
