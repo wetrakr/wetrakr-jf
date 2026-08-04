@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/wetrakr/wetrakr-jf/master/branding/thumbnail.png",
     "versions": [
       {
+        "version": "0.1.19.0",
+        "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
+        "targetAbi": "10.11.8.0",
+        "sourceUrl": "https://wetrakr.github.io/wetrakr-jf/wetrakr/wetrakr_0.1.19.0_net9.zip",
+        "checksum": "5fff93b0e89fc6f7fb995ad51266568d",
+        "timestamp": "2026-08-04T11:51:17Z"
+      },
+      {
         "version": "0.1.18.0",
         "changelog": "See https://github.com/wetrakr/wetrakr-jf/releases",
         "targetAbi": "10.11.8.0",
