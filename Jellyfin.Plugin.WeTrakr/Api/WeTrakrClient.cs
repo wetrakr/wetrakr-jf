@@ -21,14 +21,14 @@ public class WeTrakrClient
         _logger = logger;
     }
 
-    public async Task SendAsync(PluginConfiguration config, ScrobblePayload payload, CancellationToken ct)
+    public async Task SendAsync(PluginConfiguration config, ScrobbleTarget target, ScrobblePayload payload, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(config.WebhookToken) || string.IsNullOrEmpty(config.ApiBaseUrl))
+        if (target == null || string.IsNullOrEmpty(target.WebhookToken) || string.IsNullOrEmpty(config.ApiBaseUrl))
         {
             return;
         }
 
-        var url = $"{config.ApiBaseUrl.TrimEnd('/')}/webhooks/jellyfin/{config.WebhookToken}";
+        var url = $"{config.ApiBaseUrl.TrimEnd('/')}/webhooks/jellyfin/{target.WebhookToken}";
         var http = _factory.CreateClient(HttpClientNames.WeTrakr);
         http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent.Value);
 
@@ -40,10 +40,20 @@ public class WeTrakrClient
                 response.EnsureSuccessStatusCode();
 
                 // Update local bookkeeping — best-effort, non-critical.
+                // Per-account counters when the event went through a link, the
+                // global ones while the legacy single-token pairing is in use.
                 if (Plugin.Instance != null)
                 {
-                    Plugin.Instance.Configuration.LastScrobbleAt = DateTime.UtcNow;
-                    Plugin.Instance.Configuration.ScrobbleCount++;
+                    if (target.Link != null)
+                    {
+                        target.Link.LastScrobbleAt = DateTime.UtcNow;
+                        target.Link.ScrobbleCount++;
+                    }
+                    else
+                    {
+                        Plugin.Instance.Configuration.LastScrobbleAt = DateTime.UtcNow;
+                        Plugin.Instance.Configuration.ScrobbleCount++;
+                    }
                     Plugin.Instance.SaveConfiguration();
                 }
                 return;

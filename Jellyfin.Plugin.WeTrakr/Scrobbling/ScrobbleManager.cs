@@ -106,11 +106,15 @@ public class ScrobbleManager : IHostedService
 
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
-            if (string.IsNullOrEmpty(config.WebhookToken)) return;   // not paired yet
-            if (!config.ScrobblePlaying) return;                      // user disabled
+            if (!config.ScrobblePlaying) return;                       // user disabled
 
-            var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played, config.OwnerUserId);
-            await _client.SendAsync(config, payload, CancellationToken.None);
+            // Filtering happens here, before anything leaves the server: an
+            // account with no WeTrakr link scrobbles nowhere.
+            var target = config.ResolveTarget(session.UserId.ToString("N"));
+            if (target == null) return;
+
+            var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played, target.IsOwner);
+            await _client.SendAsync(config, target, payload, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -153,18 +157,20 @@ public class ScrobbleManager : IHostedService
         {
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
-            if (string.IsNullOrEmpty(config.WebhookToken)) return;
 
             if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
             if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
+
+            var target = config.ResolveTarget(e.UserId.ToString("N"));
+            if (target == null) return;
 
             // Read username via the ABI-stable UserDataSaveEventArgs.User
             // property if present. On older/newer Jellyfin that renamed the
             // User entity namespace this reflection keeps us safe.
             var userName = TryGetUserName(e);
 
-            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString(), config.OwnerUserId);
-            await _client.SendAsync(config, payload, CancellationToken.None);
+            var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString(), target.IsOwner);
+            await _client.SendAsync(config, target, payload, CancellationToken.None);
         }
         catch (Exception ex)
         {
