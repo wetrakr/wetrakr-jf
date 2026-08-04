@@ -2,6 +2,17 @@
 <html lang="en">
 <head>
     <title>WeTrakr</title>
+</head>
+<body>
+<div id="WeTrakrConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox,emby-select">
+
+    <!-- This block MUST live inside div[data-role="page"]. Jellyfin loads a
+         plugin page by parsing the whole file into a detached div and keeping
+         only `querySelector('div[data-role="page"]')`, so anything left in
+         <head> (styles included) is silently thrown away. -->
     <style>
       /* Scoped to the WeTrakr config page */
       #WeTrakrConfigPage a { color: rgb(121, 103, 255); text-decoration: none; }
@@ -57,12 +68,6 @@
         margin-left: 0.4rem;
       }
     </style>
-</head>
-<body>
-<div id="WeTrakrConfigPage"
-     data-role="page"
-     class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-checkbox,emby-select">
 
   <div data-role="content">
     <div class="content-primary">
