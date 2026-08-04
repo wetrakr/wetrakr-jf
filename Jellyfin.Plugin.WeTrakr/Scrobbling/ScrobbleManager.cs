@@ -57,7 +57,7 @@ public class ScrobbleManager : IHostedService
         _sessions.PlaybackProgress += OnPlaybackProgress;
         _sessions.PlaybackStopped  += OnPlaybackStopped;
         _userData.UserDataSaved    += OnUserDataSaved;
-        _logger.LogInformation("[WeTrakr] ScrobbleManager started — subscribed to playback + user-data events.");
+        _logger.LogInformation("[WeTrakr] ScrobbleManager started: subscribed to playback + user-data events.");
         return Task.CompletedTask;
     }
 

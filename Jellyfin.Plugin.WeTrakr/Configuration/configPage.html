@@ -7,7 +7,7 @@
       #WeTrakrConfigPage a { color: rgb(121, 103, 255); text-decoration: none; }
       #WeTrakrConfigPage a:hover { text-decoration: underline; }
 
-      /* Brand button — gradient matching WeTrakr web.
+      /* Brand button: gradient matching WeTrakr web.
          !important is needed because the `is="emby-button"` custom element
          applies its own background with higher specificity at runtime. */
       #WeTrakrConfigPage button#wtConnectBtn,
@@ -35,6 +35,21 @@
       #WeTrakrConfigPage button#wtDisconnectBtn span {
         color: #fff !important;
       }
+      /* Secondary action: no brand fill, and the label inherits the theme's
+         text colour so it stays legible on both the light and dark themes
+         (emby-button's default `.button` paints white on white here). */
+      #WeTrakrConfigPage button#wtDropLegacyBtn {
+        background: transparent !important;
+        border: 1px solid currentColor !important;
+        border-radius: 8px !important;
+        padding: 0.55rem 1.1rem !important;
+        font-weight: 600 !important;
+        opacity: 0.8;
+        cursor: pointer;
+      }
+      #WeTrakrConfigPage button#wtDropLegacyBtn:hover { opacity: 1; }
+      #WeTrakrConfigPage button#wtDropLegacyBtn span { color: inherit !important; }
+
       #WeTrakrConfigPage .wtLinkedBadge {
         display: inline-block;
         font-size: 0.8em;
@@ -61,7 +76,7 @@
           <h2 class="sectionTitle" style="margin:0;">WeTrakr</h2>
         </div>
         <p class="fieldDescription">
-          Automatically send playback events to your WeTrakr profile. Movies and episodes are tracked — pause, resume and stop are detected from the player.
+          Automatically send playback events to your WeTrakr profile. Movies and episodes are tracked: pause, resume and stop are detected from the player.
           Every Jellyfin account can be connected to its own WeTrakr account; accounts left unconnected are never sent anywhere.
         </p>
       </div>
@@ -93,10 +108,7 @@
       <!-- Disconnected state -->
       <div id="wtStateDisconnected" class="verticalSection" style="display:none">
         <h3 class="sectionTitle">Not connected</h3>
-        <p class="fieldDescription">
-          <strong id="wtDisconnectedUser">This account</strong> is not linked to WeTrakr, so nothing it plays is scrobbled.
-          Connecting needs a short code confirmed on <strong>wetrakr.com/activate</strong>.
-        </p>
+        <p class="fieldDescription" id="wtDisconnectedText"></p>
         <button is="emby-button" type="button" class="raised button-submit" id="wtConnectBtn">
           <span>Connect</span>
         </button>
@@ -227,7 +239,7 @@
 
       sel.innerHTML = jellyfinUsers.map(function (u) {
         var link = linkFor(u.Id);
-        var suffix = link ? ' — ' + (link.Username || 'connected') : '';
+        var suffix = link ? ' (' + (link.Username || 'connected') + ')' : '';
         return '<option value="' + u.Id + '">' + escapeHtml(u.Name) + escapeHtml(suffix) + '</option>';
       }).join('');
 
@@ -259,16 +271,23 @@
       var link = user ? linkFor(user.Id) : null;
       var name = user ? user.Name : 'This account';
 
-      $('wtDisconnectedUser').textContent = name;
       $('wtPairingUser').textContent = name;
       $('wtJellyfinUser').textContent = name;
 
       if (link) {
         $('wtUsername').textContent = link.Username || '(unknown user)';
         var last = link.LastScrobbleAt ? new Date(link.LastScrobbleAt).toLocaleString() : 'never';
-        $('wtStats').textContent = link.ScrobbleCount + ' events sent — last at ' + last;
+        $('wtStats').textContent = link.ScrobbleCount + ' events sent, last at ' + last;
         showState('Connected');
       } else {
+        // Under the legacy pairing this account IS being scrobbled, just into
+        // somebody else's profile. Saying "nothing is sent" there would be a lie.
+        $('wtDisconnectedText').innerHTML = snapshot.LegacyMode
+          ? '<strong>' + escapeHtml(name) + '</strong> has no WeTrakr account of its own yet, so what it plays still goes to '
+            + '<strong>' + escapeHtml(snapshot.LegacyUsername || 'the old pairing') + '</strong> through the old server-wide pairing. '
+            + 'Connect it to move that playback to its own profile.'
+          : '<strong>' + escapeHtml(name) + '</strong> is not linked to WeTrakr, so nothing it plays is scrobbled. '
+            + 'Connecting needs a short code confirmed on <strong>wetrakr.com/activate</strong>.';
         showState('Disconnected');
       }
 
