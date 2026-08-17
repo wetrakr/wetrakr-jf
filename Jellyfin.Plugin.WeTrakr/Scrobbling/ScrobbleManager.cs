@@ -21,7 +21,10 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 ///   PlaybackProgress with IsPaused transition:
 ///       false -> true : "PlaybackPause"
 ///       true  -> false: "PlaybackUnpause"
-///       no change     : "PlaybackProgress"
+///       no change     : "PlaybackProgress" (throttled to at most one per
+///                       ProgressThrottle.MinInterval per session — Jellyfin
+///                       fires progress every few seconds and forwarding each
+///                       one floods the WeTrakr API)
 ///
 /// Only Movie and Episode items are dispatched; everything else is ignored.
 /// Failures are logged and swallowed — scrobble must never break playback.
@@ -33,6 +36,7 @@ public class ScrobbleManager : IHostedService
     private readonly WeTrakrClient _client;
     private readonly PayloadBuilder _builder;
     private readonly PauseStateTracker _paused;
+    private readonly ProgressThrottle _progress;
     private readonly ILogger<ScrobbleManager> _logger;
 
     public ScrobbleManager(
@@ -41,6 +45,7 @@ public class ScrobbleManager : IHostedService
         WeTrakrClient client,
         PayloadBuilder builder,
         PauseStateTracker paused,
+        ProgressThrottle progress,
         ILogger<ScrobbleManager> logger)
     {
         _sessions = sessions;
@@ -48,6 +53,7 @@ public class ScrobbleManager : IHostedService
         _client = client;
         _builder = builder;
         _paused = paused;
+        _progress = progress;
         _logger = logger;
     }
 
@@ -72,12 +78,18 @@ public class ScrobbleManager : IHostedService
     }
 
     private void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e)
-        => _ = DispatchAsync(e, "PlaybackStart", e.IsPaused, played: false);
+    {
+        // Seed the throttle so the first progress tick right after start (which
+        // carries the same position PlaybackStart already sent) is suppressed.
+        _progress.Seed(SessionKey(e), DateTime.UtcNow);
+        _ = DispatchAsync(e, "PlaybackStart", e.IsPaused, played: false);
+    }
 
     private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
     {
         var key = SessionKey(e);
         _paused.Remove(key);
+        _progress.Remove(key);
         _ = DispatchAsync(e, "PlaybackStop", isPaused: false, played: e.PlayedToCompletion);
     }
 
@@ -92,6 +104,15 @@ public class ScrobbleManager : IHostedService
         else eventName = "PlaybackProgress";
 
         _paused.Set(key, e.IsPaused);
+
+        // Pause/unpause transitions are meaningful and rare — always dispatch.
+        // A plain progress tick only goes through once per MinInterval per
+        // session; the rest are dropped here, before any HTTP call.
+        if (eventName == "PlaybackProgress" && !_progress.ShouldDispatch(key, DateTime.UtcNow))
+        {
+            return;
+        }
+
         _ = DispatchAsync(e, eventName, e.IsPaused, played: false);
     }
 
