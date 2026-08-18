@@ -26,6 +26,12 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 ///                       fires progress every few seconds and forwarding each
 ///                       one floods the WeTrakr API)
 ///
+///   UserDataSaved with SaveReason.TogglePlayed -> "ItemMarkedPlayed", but only
+///                       when the played flag actually flips (see
+///                       PlayedStateTracker — Jellyfin raises the event even
+///                       when the value is unchanged, so library-wide re-marks
+///                       from other plugins would flood the API)
+///
 /// Only Movie and Episode items are dispatched; everything else is ignored.
 /// Failures are logged and swallowed — scrobble must never break playback.
 /// </summary>
@@ -37,6 +43,7 @@ public class ScrobbleManager : IHostedService
     private readonly PayloadBuilder _builder;
     private readonly PauseStateTracker _paused;
     private readonly ProgressThrottle _progress;
+    private readonly PlayedStateTracker _playedState;
     private readonly ILogger<ScrobbleManager> _logger;
 
     public ScrobbleManager(
@@ -46,6 +53,7 @@ public class ScrobbleManager : IHostedService
         PayloadBuilder builder,
         PauseStateTracker paused,
         ProgressThrottle progress,
+        PlayedStateTracker playedState,
         ILogger<ScrobbleManager> logger)
     {
         _sessions = sessions;
@@ -54,6 +62,7 @@ public class ScrobbleManager : IHostedService
         _builder = builder;
         _paused = paused;
         _progress = progress;
+        _playedState = playedState;
         _logger = logger;
     }
 
@@ -163,6 +172,20 @@ public class ScrobbleManager : IHostedService
             var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
                 ? "ItemMarkedPlayed"
                 : "UserDataSaved";
+
+            // A re-mark that does not flip the played flag carries no new
+            // information. Jellyfin raises TogglePlayed even when the value is
+            // unchanged, so a plugin that re-applies an external history over
+            // the whole library (a Trakt sync task, say) would otherwise have
+            // us forward hundreds of identical events on every single run.
+            if (eventName == "ItemMarkedPlayed"
+                && !_playedState.ShouldDispatch(
+                        PlayedStateTracker.KeyFor(e.UserId, e.Item.Id),
+                        e.UserData.Played,
+                        DateTime.UtcNow))
+            {
+                return;
+            }
 
             _ = DispatchUserDataAsync(e, eventName);
         }
