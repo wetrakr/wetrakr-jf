@@ -138,6 +138,9 @@ public class ScrobbleManager : IHostedService
             if (config == null) return;
             if (!config.ScrobblePlaying) return;                       // user disabled
 
+            // Filter out excluded libraries
+            if (config.ExcludedLibraries.Any(directory => e.Item.Path.Contains(directory, StringComparison.OrdinalIgnoreCase))) return;
+
             // Filtering happens here, before anything leaves the server: an
             // account with no WeTrakr link scrobbles nowhere.
             var target = config.ResolveTarget(session.UserId.ToString("N"));
@@ -204,6 +207,9 @@ public class ScrobbleManager : IHostedService
 
             if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
             if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
+
+            // Filter out excluded libraries
+            if (config.ExcludedLibraries.Any(directory => e.Item.Path.Contains(directory, StringComparison.OrdinalIgnoreCase))) return;
 
             var target = config.ResolveTarget(e.UserId.ToString("N"));
             if (target == null) return;
