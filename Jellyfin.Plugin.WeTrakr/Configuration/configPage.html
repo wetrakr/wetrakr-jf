@@ -148,6 +148,14 @@
           <span>Disconnect this account</span>
         </button>
       </div>
+      
+      <!-- Excluded Libraries -->
+      <div id="wtExcludedLibraries" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Exclude library folders</h3>
+        <p class="fieldDescription">Library folders that will not be scrobbled to WeTrakr.</p>
+        
+        <div id="wtExcludedLibrariesList"></div>
+      </div>
 
       <!-- Server-wide event settings -->
       <div id="wtEventSettings" class="verticalSection" style="display:none">
@@ -303,6 +311,50 @@
       if (snapshot.LegacyMode) {
         $('wtLegacyUsername').textContent = snapshot.LegacyUsername || '(unknown user)';
       }
+
+      renderExcludedLibraries();
+    }
+    
+    function renderExcludedLibraries() {
+      $('wtExcludedLibraries').style.display =
+              ((snapshot.Links || []).length || snapshot.LegacyMode) ? 'block' : 'none';
+      
+      ApiClient.getVirtualFolders().then(function (result) {
+        loadExcludedLibraries(result);
+      });
+    }
+    
+    function loadExcludedLibraries(virtualFolders) {
+      let html = '<div data-role="controlgroup">';
+      
+      const excludedLibraries = snapshot.ExcludedLibraries || [];
+
+      virtualFolders.forEach(function (virtualFolder) {
+        virtualFolder.Locations.forEach(function (location) {
+          const checked = excludedLibraries.includes(location);
+          const checkedAttribute = checked ? 'checked="checked"' : '';
+          html += '<label><input is="emby-checkbox" type="checkbox" data-location="' + location + '" ' + checkedAttribute + ' /><span>' + location + '</span></label>';
+        });
+      });
+
+      html += '</div>'
+      $('wtExcludedLibrariesList').innerHTML = html;
+      
+      for (const el of $('wtExcludedLibrariesList').querySelectorAll('input[data-location]')) {
+        el.addEventListener('change', () => updateExcludedLibraries());
+      }
+    }
+    
+    function updateExcludedLibraries() {
+      let excludedLibraries = [];
+      
+      for (const location of $('wtExcludedLibrariesList').querySelectorAll('input[data-location]')) {
+        if (location.checked) {
+          excludedLibraries.push(location.attributes['data-location'].value);
+        }
+      }
+
+      updateSetting('ExcludedLibraries', excludedLibraries);
     }
 
     function refreshStatus() {

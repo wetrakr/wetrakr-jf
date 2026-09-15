@@ -203,7 +203,8 @@ public class WeTrakrController : ControllerBase
             ScrobbleWatched = cfg.ScrobbleWatched,
             ScrobbleRatings = cfg.ScrobbleRatings,
             LastScrobbleAt = cfg.LastScrobbleAt,
-            ScrobbleCount = cfg.ScrobbleCount
+            ScrobbleCount = cfg.ScrobbleCount,
+            ExcludedLibraries = cfg.ExcludedLibraries,
         });
     }
 
@@ -217,6 +218,7 @@ public class WeTrakrController : ControllerBase
         if (dto.ScrobblePlaying.HasValue) cfg.ScrobblePlaying = dto.ScrobblePlaying.Value;
         if (dto.ScrobbleWatched.HasValue) cfg.ScrobbleWatched = dto.ScrobbleWatched.Value;
         if (dto.ScrobbleRatings.HasValue) cfg.ScrobbleRatings = dto.ScrobbleRatings.Value;
+        if (dto.ExcludedLibraries != null) cfg.ExcludedLibraries = dto.ExcludedLibraries;
 
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
@@ -281,6 +283,7 @@ public class StatusSnapshot
     public bool ScrobbleRatings { get; set; }
     public DateTime? LastScrobbleAt { get; set; }
     public long ScrobbleCount { get; set; }
+    public List<string> ExcludedLibraries { get; set; } = [];
 }
 
 public class SettingsUpdateDto
@@ -288,4 +291,5 @@ public class SettingsUpdateDto
     public bool? ScrobblePlaying { get; set; }
     public bool? ScrobbleWatched { get; set; }
     public bool? ScrobbleRatings { get; set; }
+    public List<string>? ExcludedLibraries { get; set; }
 }

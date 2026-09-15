@@ -19,6 +19,7 @@ public class PluginConfiguration : BasePluginConfiguration
         ScrobbleRatings = true;
         LastScrobbleAt = null;
         ScrobbleCount = 0;
+        ExcludedLibraries = new List<string>();
     }
 
     /// <summary>
@@ -70,6 +71,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public long ScrobbleCount { get; set; }
 
+    /// <summary>Libraries to exclude from scrobbling.</summary>
+    public List<string> ExcludedLibraries { get; set; }
+    
     /// <summary>True while the plugin is still running on the single-token legacy pairing.</summary>
     public bool IsLegacyMode()
         => (UserLinks == null || UserLinks.Count == 0) && !string.IsNullOrEmpty(WebhookToken);
