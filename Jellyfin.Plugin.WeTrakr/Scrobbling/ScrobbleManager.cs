@@ -18,6 +18,10 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 /// Event translation:
 ///   PlaybackStart   -> "PlaybackStart"
 ///   PlaybackStopped -> "PlaybackStop"
+///   PlaybackStart of a different item on a session whose previous item never
+///                      reported a stop -> synthetic "PlaybackStop" for that
+///                      previous item at its last known position (see
+///                      SessionItemTracker)
 ///   PlaybackProgress with IsPaused transition:
 ///       false -> true : "PlaybackPause"
 ///       true  -> false: "PlaybackUnpause"
@@ -31,6 +35,9 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 ///                       PlayedStateTracker — Jellyfin raises the event even
 ///                       when the value is unchanged, so library-wide re-marks
 ///                       from other plugins would flood the API)
+///   UserDataSaved with SaveReason.PlaybackProgress, when Jellyfin flips the
+///                       item to played mid-playback -> "ItemMarkedPlayed"
+///                       (see ProgressPlayedTracker)
 ///
 /// Only Movie and Episode items are dispatched; everything else is ignored.
 /// Failures are logged and swallowed — scrobble must never break playback.
@@ -44,6 +51,8 @@ public class ScrobbleManager : IHostedService
     private readonly PauseStateTracker _paused;
     private readonly ProgressThrottle _progress;
     private readonly PlayedStateTracker _playedState;
+    private readonly ProgressPlayedTracker _progressPlayed;
+    private readonly SessionItemTracker _sessionItems;
     private readonly ILogger<ScrobbleManager> _logger;
 
     public ScrobbleManager(
@@ -54,6 +63,8 @@ public class ScrobbleManager : IHostedService
         PauseStateTracker paused,
         ProgressThrottle progress,
         PlayedStateTracker playedState,
+        ProgressPlayedTracker progressPlayed,
+        SessionItemTracker sessionItems,
         ILogger<ScrobbleManager> logger)
     {
         _sessions = sessions;
@@ -63,6 +74,8 @@ public class ScrobbleManager : IHostedService
         _paused = paused;
         _progress = progress;
         _playedState = playedState;
+        _progressPlayed = progressPlayed;
+        _sessionItems = sessionItems;
         _logger = logger;
     }
 
@@ -90,7 +103,24 @@ public class ScrobbleManager : IHostedService
     {
         // Seed the throttle so the first progress tick right after start (which
         // carries the same position PlaybackStart already sent) is suppressed.
-        _progress.Seed(SessionKey(e), DateTime.UtcNow);
+        var now = DateTime.UtcNow;
+        _progress.Seed(SessionKey(e), now);
+
+        if (e.Item != null && e.Session != null)
+        {
+            var previous = _sessionItems.Begin(e.Session.Id, e.Item, e.Session, SessionKey(e), e.PlaybackPositionTicks ?? 0, now);
+            if (previous != null)
+            {
+                // The client moved on without stopping the previous item. Close
+                // it here, as the real stop would have, or it stays "playing"
+                // on WeTrakr and never gets its watched mark.
+                _paused.Remove(previous.PlayKey);
+                _progress.Remove(previous.PlayKey);
+                _logger.LogDebug("[WeTrakr] {Item} replaced without a stop on session {Session}; sending it", previous.Item.Name, e.Session.Id);
+                _ = DispatchAsync(previous.Item, previous.Session, "PlaybackStop", previous.PositionTicks, isPaused: false, played: false);
+            }
+        }
+
         _ = DispatchAsync(e, "PlaybackStart", e.IsPaused, played: false);
     }
 
@@ -99,6 +129,11 @@ public class ScrobbleManager : IHostedService
         var key = SessionKey(e);
         _paused.Remove(key);
         _progress.Remove(key);
+        if (e.Item != null && e.Session != null)
+        {
+            _sessionItems.End(e.Session.Id, e.Item.Id);
+        }
+
         _ = DispatchAsync(e, "PlaybackStop", isPaused: false, played: e.PlayedToCompletion);
     }
 
@@ -106,6 +141,13 @@ public class ScrobbleManager : IHostedService
     {
         var key = SessionKey(e);
         var wasPaused = _paused.WasPaused(key);
+
+        // Every tick refreshes the position, including the ones the throttle
+        // drops below: a synthetic stop needs where the user really left off.
+        if (e.Item != null && e.Session != null)
+        {
+            _sessionItems.Update(e.Session.Id, e.Item, e.PlaybackPositionTicks, DateTime.UtcNow);
+        }
 
         string eventName;
         if (e.IsPaused && !wasPaused) eventName = "PlaybackPause";
@@ -125,13 +167,14 @@ public class ScrobbleManager : IHostedService
         _ = DispatchAsync(e, eventName, e.IsPaused, played: false);
     }
 
-    private async Task DispatchAsync(PlaybackProgressEventArgs e, string eventName, bool isPaused, bool played)
+    private Task DispatchAsync(PlaybackProgressEventArgs e, string eventName, bool isPaused, bool played)
+        => DispatchAsync(e.Item, e.Session, eventName, e.PlaybackPositionTicks ?? 0, isPaused, played);
+
+    private async Task DispatchAsync(BaseItem? item, SessionInfo? session, string eventName, long positionTicks, bool isPaused, bool played)
     {
         try
         {
-            if (!ShouldDispatch(e.Item)) return;
-
-            var session = e.Session;
+            if (!ShouldDispatch(item)) return;
             if (session == null) return;
 
             var config = Plugin.Instance?.Configuration;
@@ -143,7 +186,7 @@ public class ScrobbleManager : IHostedService
             var target = config.ResolveTarget(session.UserId.ToString("N"));
             if (target == null) return;
 
-            var payload = _builder.Build(eventName, e.Item, session, e.PlaybackPositionTicks ?? 0, isPaused, played, target.IsOwner);
+            var payload = _builder.Build(eventName, item!, session, positionTicks, isPaused, played, target.IsOwner);
             await _client.SendAsync(config, target, payload, CancellationToken.None);
         }
         catch (Exception ex)
@@ -161,6 +204,12 @@ public class ScrobbleManager : IHostedService
         // endpoint; if it throws, the original request 500s for the user.
         try
         {
+            if (e.SaveReason == UserDataSaveReason.PlaybackProgress)
+            {
+                OnPlaybackProgressSaved(e);
+                return;
+            }
+
             if (e.SaveReason != UserDataSaveReason.TogglePlayed
                 && e.SaveReason != UserDataSaveReason.UpdateUserRating)
             {
@@ -193,6 +242,29 @@ public class ScrobbleManager : IHostedService
         {
             _logger.LogWarning(ex, "[WeTrakr] OnUserDataSaved sync path threw");
         }
+    }
+
+    /// <summary>
+    /// Forwards the played mark Jellyfin sets on its own once playback passes
+    /// MaxResumePct, so the item is watched on WeTrakr even if the client never
+    /// reports the stop. Runs on every progress tick: keep it cheap.
+    /// </summary>
+    private void OnPlaybackProgressSaved(UserDataSaveEventArgs e)
+    {
+        if (!ShouldDispatch(e.Item)) return;
+
+        // Without a known runtime (or under MinResumeDuration) Jellyfin marks
+        // the item played on the very first tick; that is not a finished watch.
+        if ((e.Item.RunTimeTicks ?? 0) < MinRuntimeForProgressPlayed.Ticks) return;
+
+        var key = PlayedStateTracker.KeyFor(e.UserId, e.Item.Id);
+        if (!_progressPlayed.ObserveFlipToPlayed(key, e.UserData.Played, DateTime.UtcNow)) return;
+
+        // Record it in the toggle gate as well, so a later redundant "mark as
+        // played" from another plugin does not send it a second time.
+        _playedState.ShouldDispatch(key, true, DateTime.UtcNow);
+
+        _ = DispatchUserDataAsync(e, "ItemMarkedPlayed");
     }
 
     private async Task DispatchUserDataAsync(UserDataSaveEventArgs e, string eventName)
@@ -238,6 +310,9 @@ public class ScrobbleManager : IHostedService
             return null;
         }
     }
+
+    /// <summary>Jellyfin's default MinResumeDurationSeconds.</summary>
+    private static readonly TimeSpan MinRuntimeForProgressPlayed = TimeSpan.FromMinutes(5);
 
     private static bool ShouldDispatch(BaseItem? item)
     {

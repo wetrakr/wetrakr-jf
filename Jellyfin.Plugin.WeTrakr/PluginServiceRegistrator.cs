@@ -22,6 +22,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<PauseStateTracker>();
         serviceCollection.AddSingleton<ProgressThrottle>();
         serviceCollection.AddSingleton<PlayedStateTracker>();
+        serviceCollection.AddSingleton<ProgressPlayedTracker>();
+        serviceCollection.AddSingleton<SessionItemTracker>();
         serviceCollection.AddSingleton<PayloadBuilder>();
 
         // ScrobbleManager is a hosted service: Jellyfin starts/stops it with the server.
