@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Scrobbling;
+using Jellyfin.Plugin.WeTrakr.Sync;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,8 +27,15 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<SessionItemTracker>();
         serviceCollection.AddSingleton<PayloadBuilder>();
 
-        // ScrobbleManager is a hosted service: Jellyfin starts/stops it with the server.
+        // Library sync (0.2.0+). The scheduled task (Tasks/WeTrakrSyncTask) is
+        // found by Jellyfin on its own and gets the engine from here.
+        serviceCollection.AddSingleton<SyncApi>();
+        serviceCollection.AddSingleton<SyncEngine>();
+        serviceCollection.AddSingleton<SyncScheduler>();
+
+        // Hosted services: Jellyfin starts/stops them with the server.
         serviceCollection.AddHostedService<ScrobbleManager>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<SyncScheduler>());
     }
 }
 

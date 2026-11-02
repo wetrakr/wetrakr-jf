@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Configuration;
+using Jellyfin.Plugin.WeTrakr.Sync;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -39,8 +40,15 @@ namespace Jellyfin.Plugin.WeTrakr.Scrobbling;
 ///                       item to played mid-playback -> "ItemMarkedPlayed"
 ///                       (see ProgressPlayedTracker)
 ///
-/// Only Movie and Episode items are dispatched; everything else is ignored.
+/// Only Movie and Episode items are dispatched; everything else is ignored,
+/// and so is anything in a library excluded in the plugin settings.
 /// Failures are logged and swallowed — scrobble must never break playback.
+///
+/// Library sync (0.2.0+): every user-data change that is not the sync's own
+/// (SaveReason.Import) leaves a notice in SyncSignals, so the scheduler uploads
+/// it even when the live event is off or did not get through; and every
+/// watched mark that did get through is recorded in LiveSentRegistry, so the
+/// sync does not upload it a second time.
 /// </summary>
 public class ScrobbleManager : IHostedService
 {
@@ -53,6 +61,7 @@ public class ScrobbleManager : IHostedService
     private readonly PlayedStateTracker _playedState;
     private readonly ProgressPlayedTracker _progressPlayed;
     private readonly SessionItemTracker _sessionItems;
+    private readonly ILibraryManager _library;
     private readonly ILogger<ScrobbleManager> _logger;
 
     public ScrobbleManager(
@@ -65,6 +74,7 @@ public class ScrobbleManager : IHostedService
         PlayedStateTracker playedState,
         ProgressPlayedTracker progressPlayed,
         SessionItemTracker sessionItems,
+        ILibraryManager library,
         ILogger<ScrobbleManager> logger)
     {
         _sessions = sessions;
@@ -76,6 +86,7 @@ public class ScrobbleManager : IHostedService
         _playedState = playedState;
         _progressPlayed = progressPlayed;
         _sessionItems = sessionItems;
+        _library = library;
         _logger = logger;
     }
 
@@ -134,7 +145,19 @@ public class ScrobbleManager : IHostedService
             _sessionItems.End(e.Session.Id, e.Item.Id);
         }
 
-        _ = DispatchAsync(e, "PlaybackStop", isPaused: false, played: e.PlayedToCompletion);
+        var played = e.PlayedToCompletion;
+        var item = e.Item;
+        var userId = e.Session?.UserId ?? Guid.Empty;
+        _ = DispatchAsync(e, "PlaybackStop", isPaused: false, played: played).ContinueWith(
+            t =>
+            {
+                // Received as watched: the sync must not upload it again as a new play.
+                if (t.Result && played && item != null && userId != Guid.Empty)
+                {
+                    LiveSentRegistry.MarkPlayed(userId.ToString("N"), item.Id);
+                }
+            },
+            TaskScheduler.Default);
     }
 
     private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
@@ -167,31 +190,33 @@ public class ScrobbleManager : IHostedService
         _ = DispatchAsync(e, eventName, e.IsPaused, played: false);
     }
 
-    private Task DispatchAsync(PlaybackProgressEventArgs e, string eventName, bool isPaused, bool played)
+    private Task<bool> DispatchAsync(PlaybackProgressEventArgs e, string eventName, bool isPaused, bool played)
         => DispatchAsync(e.Item, e.Session, eventName, e.PlaybackPositionTicks ?? 0, isPaused, played);
 
-    private async Task DispatchAsync(BaseItem? item, SessionInfo? session, string eventName, long positionTicks, bool isPaused, bool played)
+    /// <summary>Returns whether WeTrakr received the event.</summary>
+    private async Task<bool> DispatchAsync(BaseItem? item, SessionInfo? session, string eventName, long positionTicks, bool isPaused, bool played)
     {
         try
         {
-            if (!ShouldDispatch(item)) return;
-            if (session == null) return;
+            if (!ShouldDispatch(item)) return false;
+            if (session == null) return false;
 
             var config = Plugin.Instance?.Configuration;
-            if (config == null) return;
-            if (!config.ScrobblePlaying) return;                       // user disabled
+            if (config == null) return false;
+            if (!config.ScrobblePlaying) return false;                 // user disabled
 
             // Filtering happens here, before anything leaves the server: an
             // account with no WeTrakr link scrobbles nowhere.
             var target = config.ResolveTarget(session.UserId.ToString("N"));
-            if (target == null) return;
+            if (target == null) return false;
 
             var payload = _builder.Build(eventName, item!, session, positionTicks, isPaused, played, target.IsOwner);
-            await _client.SendAsync(config, target, payload, CancellationToken.None);
+            return await _client.SendAsync(config, target, payload, CancellationToken.None);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[WeTrakr] Dispatch failed for event {Event}", eventName);
+            return false;
         }
     }
 
@@ -208,6 +233,15 @@ public class ScrobbleManager : IHostedService
             {
                 OnPlaybackProgressSaved(e);
                 return;
+            }
+
+            // Any other change that is not the sync's own reaches the sync's
+            // upload, whatever happens to the live event below (switched off,
+            // or not received). Import is skipped: the sync writes with it, and
+            // so do other plugins' importers (the daily full pass sees those).
+            if (e.SaveReason != UserDataSaveReason.Import && ShouldDispatch(e.Item))
+            {
+                SyncSignals.MarkDirty(e.UserId.ToString("N"), e.Item.Id);
             }
 
             if (e.SaveReason != UserDataSaveReason.TogglePlayed
@@ -286,7 +320,23 @@ public class ScrobbleManager : IHostedService
             var userName = TryGetUserName(e);
 
             var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString(), target.IsOwner);
-            await _client.SendAsync(config, target, payload, CancellationToken.None);
+            var sent = await _client.SendAsync(config, target, payload, CancellationToken.None);
+            if (eventName != "ItemMarkedPlayed") return;
+
+            var userId = e.UserId.ToString("N");
+            if (!sent)
+            {
+                // Not received: let the next mark with this value through instead
+                // of taking it for a redundant re-mark, and leave the change to
+                // the sync's upload meanwhile.
+                _playedState.Forget(PlayedStateTracker.KeyFor(e.UserId, e.Item.Id), payload.Played);
+                SyncSignals.MarkDirty(userId, e.Item.Id);
+            }
+            else if (payload.Played)
+            {
+                // Received as watched: the sync must not upload it again as a new play.
+                LiveSentRegistry.MarkPlayed(userId, e.Item.Id);
+            }
         }
         catch (Exception ex)
         {
@@ -314,10 +364,11 @@ public class ScrobbleManager : IHostedService
     /// <summary>Jellyfin's default MinResumeDurationSeconds.</summary>
     private static readonly TimeSpan MinRuntimeForProgressPlayed = TimeSpan.FromMinutes(5);
 
-    private static bool ShouldDispatch(BaseItem? item)
+    private bool ShouldDispatch(BaseItem? item)
     {
         if (item == null) return false;
-        return item is Movie || item is Episode;
+        if (item is not Movie && item is not Episode) return false;
+        return !LibraryFilter.Current(_library).IsExcluded(item);
     }
 
     private static string SessionKey(PlaybackProgressEventArgs e)

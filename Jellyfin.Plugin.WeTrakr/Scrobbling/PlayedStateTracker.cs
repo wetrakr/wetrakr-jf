@@ -63,6 +63,20 @@ public class PlayedStateTracker
         return true;
     }
 
+    /// <summary>
+    /// Undoes the record of a value whose dispatch did not reach WeTrakr, so the
+    /// next event with that value goes through instead of being taken for a
+    /// redundant re-mark (the change would otherwise be lost for good). Only if
+    /// nothing newer was recorded meanwhile.
+    /// </summary>
+    public void Forget(string key, bool played)
+    {
+        if (_state.TryGetValue(key, out var current) && current.Played == played)
+        {
+            _state.TryRemove(key, out _);
+        }
+    }
+
     /// <summary>Drops entries older than <see cref="EntryTtl"/>.</summary>
     private void Sweep(DateTime nowUtc)
     {

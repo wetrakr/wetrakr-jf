@@ -19,6 +19,12 @@ public class PluginConfiguration : BasePluginConfiguration
         ScrobbleRatings = true;
         LastScrobbleAt = null;
         ScrobbleCount = 0;
+        SyncToWeTrakr = true;
+        SyncFromWeTrakr = true;
+        WatchlistPlaylist = true;
+        WatchlistPlaylistName = "WeTrakr Watchlist";
+        MaxCheckIntervalHours = 6;
+        ExcludedLibraryIds = new List<string>();
     }
 
     /// <summary>
@@ -70,6 +76,38 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public long ScrobbleCount { get; set; }
 
+    // --- Library sync (0.2.0+, /integrations/jellyfin/*) ---
+    // Only for accounts paired one by one (UserLinks): the sync keeps a state
+    // per Jellyfin account, which the legacy single-token pairing does not have.
+    // What exactly travels (watched, progress, ratings, favorites, Planning) is
+    // decided per account on WeTrakr; these switches are the server's own.
+
+    /// <summary>Jellyfin → WeTrakr: the whole library the first time, then only changes.</summary>
+    public bool SyncToWeTrakr { get; set; }
+
+    /// <summary>WeTrakr → Jellyfin: watched state, resume points, ratings, favorites and the Planning playlist.</summary>
+    public bool SyncFromWeTrakr { get; set; }
+
+    /// <summary>Keeps a private "WeTrakr Watchlist" playlist per account with what is in Planning.</summary>
+    public bool WatchlistPlaylist { get; set; }
+
+    public string WatchlistPlaylistName { get; set; }
+
+    /// <summary>
+    /// Upper bound (hours) of the wait between checks for changes on WeTrakr
+    /// while nothing happens. The plugin starts at 30 min and doubles the wait
+    /// after every empty check, up to this; it drops back to 30 min as soon as
+    /// there are changes or someone uses Jellyfin. See Sync/SyncScheduler.
+    /// </summary>
+    public int MaxCheckIntervalHours { get; set; }
+
+    /// <summary>Libraries ignored altogether (no scrobble, no sync): VirtualFolderInfo.ItemId values.</summary>
+    public List<string> ExcludedLibraryIds { get; set; }
+
+    /// <summary>Linked accounts the sync can run for (token present and still accepted by WeTrakr).</summary>
+    public IEnumerable<UserLink> SyncLinks()
+        => (UserLinks ?? new List<UserLink>()).Where(l => !string.IsNullOrEmpty(l.WebhookToken) && !l.Invalid);
+
     /// <summary>True while the plugin is still running on the single-token legacy pairing.</summary>
     public bool IsLegacyMode()
         => (UserLinks == null || UserLinks.Count == 0) && !string.IsNullOrEmpty(WebhookToken);
@@ -98,7 +136,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public ScrobbleTarget? ResolveTarget(string? jellyfinUserId)
     {
         var link = FindLink(jellyfinUserId);
-        if (link != null && !string.IsNullOrEmpty(link.WebhookToken))
+        if (link != null && !string.IsNullOrEmpty(link.WebhookToken) && !link.Invalid)
         {
             return new ScrobbleTarget { WebhookToken = link.WebhookToken, IsOwner = true, Link = link };
         }
@@ -147,4 +185,12 @@ public class UserLink
     public DateTime? LastScrobbleAt { get; set; }
 
     public long ScrobbleCount { get; set; }
+
+    /// <summary>The API answered 401 to the sync: the token was replaced (paired
+    /// again elsewhere) or the connection was removed on WeTrakr. Pair again.</summary>
+    public bool Invalid { get; set; }
+
+    public DateTime? LastSyncAt { get; set; }
+
+    public string LastSyncResult { get; set; } = string.Empty;
 }

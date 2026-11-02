@@ -1,6 +1,8 @@
 using System.Linq;
 using Jellyfin.Plugin.WeTrakr.Api;
 using Jellyfin.Plugin.WeTrakr.Configuration;
+using Jellyfin.Plugin.WeTrakr.Sync;
+using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +24,9 @@ namespace Jellyfin.Plugin.WeTrakr.Controllers;
 public class WeTrakrController : ControllerBase
 {
     private readonly DeviceCodeClient _device;
+    private readonly SyncEngine _sync;
+    private readonly SyncScheduler _scheduler;
+    private readonly ILibraryManager _library;
 
     // In-memory, single-active-pairing state: one admin drives the config page
     // at a time and the device code is short-lived (10 min). If the page is
@@ -30,9 +35,12 @@ public class WeTrakrController : ControllerBase
     private static string? _pendingJellyfinUserId;
     private static string? _pendingJellyfinUserName;
 
-    public WeTrakrController(DeviceCodeClient device)
+    public WeTrakrController(DeviceCodeClient device, SyncEngine sync, SyncScheduler scheduler, ILibraryManager library)
     {
         _device = device;
+        _sync = sync;
+        _scheduler = scheduler;
+        _library = library;
     }
 
     /// <summary>
@@ -109,6 +117,14 @@ public class WeTrakrController : ControllerBase
             existing.LinkedAt = DateTime.UtcNow;
             existing.LastScrobbleAt = null;
             existing.ScrobbleCount = 0;
+            existing.Invalid = false;
+            existing.LastSyncAt = null;
+            existing.LastSyncResult = string.Empty;
+
+            // A new pairing starts the library sync from scratch (the account
+            // on the other side may be a different one): first import and
+            // snapshot again. Both are idempotent on WeTrakr.
+            SyncStateStore.Reset(userId);
 
             // The legacy single-token pairing is superseded the moment any
             // account is linked the new way: keeping it would scrobble every
@@ -155,6 +171,7 @@ public class WeTrakrController : ControllerBase
         {
             var link = cfg.FindLink(userId);
             if (link != null) cfg.UserLinks.Remove(link);
+            SyncStateStore.Reset(userId);
 
             // Disconnecting the account behind the legacy pairing must also drop
             // the global token, or its events would keep flowing.
@@ -188,7 +205,11 @@ public class WeTrakrController : ControllerBase
                 UserName = l.JellyfinUserName,
                 Username = l.WeTrakrUsername,
                 LastScrobbleAt = l.LastScrobbleAt,
-                ScrobbleCount = l.ScrobbleCount
+                ScrobbleCount = l.ScrobbleCount,
+                Invalid = l.Invalid,
+                LastSyncAt = l.LastSyncAt,
+                LastSyncResult = l.LastSyncResult,
+                NextCheckAt = _scheduler.NextCheckFor(l.JellyfinUserId)
             })
             .ToList();
 
@@ -203,8 +224,30 @@ public class WeTrakrController : ControllerBase
             ScrobbleWatched = cfg.ScrobbleWatched,
             ScrobbleRatings = cfg.ScrobbleRatings,
             LastScrobbleAt = cfg.LastScrobbleAt,
-            ScrobbleCount = cfg.ScrobbleCount
+            ScrobbleCount = cfg.ScrobbleCount,
+            SyncToWeTrakr = cfg.SyncToWeTrakr,
+            SyncFromWeTrakr = cfg.SyncFromWeTrakr,
+            WatchlistPlaylist = cfg.WatchlistPlaylist,
+            ExcludedLibraryIds = cfg.ExcludedLibraryIds ?? new List<string>(),
+            Libraries = LibraryFilter.SelectableLibraries(_library)
+                .Select(v => new LibraryDto { Id = v.ItemId, Name = v.Name ?? string.Empty })
+                .ToList()
         });
+    }
+
+    /// <summary>
+    /// Full library sync now (both directions, every linked account), the same
+    /// pass as the daily scheduled task. Runs in the background: the page polls
+    /// Status for each account's result.
+    /// </summary>
+    [HttpPost("SyncNow")]
+    public ActionResult SyncNow()
+    {
+        var cfg = Plugin.Instance?.Configuration;
+        if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
+        if (!cfg.SyncLinks().Any()) return BadRequest(new { error = "no_linked_accounts" });
+        _ = Task.Run(() => _sync.RunAll(null, CancellationToken.None));
+        return Accepted();
     }
 
     /// <summary>Updates a single boolean setting. Other fields ignored.</summary>
@@ -217,6 +260,17 @@ public class WeTrakrController : ControllerBase
         if (dto.ScrobblePlaying.HasValue) cfg.ScrobblePlaying = dto.ScrobblePlaying.Value;
         if (dto.ScrobbleWatched.HasValue) cfg.ScrobbleWatched = dto.ScrobbleWatched.Value;
         if (dto.ScrobbleRatings.HasValue) cfg.ScrobbleRatings = dto.ScrobbleRatings.Value;
+        if (dto.SyncToWeTrakr.HasValue) cfg.SyncToWeTrakr = dto.SyncToWeTrakr.Value;
+        if (dto.SyncFromWeTrakr.HasValue) cfg.SyncFromWeTrakr = dto.SyncFromWeTrakr.Value;
+        if (dto.WatchlistPlaylist.HasValue) cfg.WatchlistPlaylist = dto.WatchlistPlaylist.Value;
+        if (dto.ExcludedLibraryIds != null)
+        {
+            cfg.ExcludedLibraryIds = dto.ExcludedLibraryIds
+                .Where(id => Guid.TryParse(id, out _))
+                .Select(id => Guid.Parse(id).ToString("N"))
+                .Distinct()
+                .ToList();
+        }
 
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
@@ -267,6 +321,16 @@ public class UserLinkDto
     public string Username { get; set; } = string.Empty;
     public DateTime? LastScrobbleAt { get; set; }
     public long ScrobbleCount { get; set; }
+    public bool Invalid { get; set; }
+    public DateTime? LastSyncAt { get; set; }
+    public string LastSyncResult { get; set; } = string.Empty;
+    public DateTime? NextCheckAt { get; set; }
+}
+
+public class LibraryDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
 }
 
 public class StatusSnapshot
@@ -281,6 +345,11 @@ public class StatusSnapshot
     public bool ScrobbleRatings { get; set; }
     public DateTime? LastScrobbleAt { get; set; }
     public long ScrobbleCount { get; set; }
+    public bool SyncToWeTrakr { get; set; }
+    public bool SyncFromWeTrakr { get; set; }
+    public bool WatchlistPlaylist { get; set; }
+    public List<string> ExcludedLibraryIds { get; set; } = new();
+    public List<LibraryDto> Libraries { get; set; } = new();
 }
 
 public class SettingsUpdateDto
@@ -288,4 +357,8 @@ public class SettingsUpdateDto
     public bool? ScrobblePlaying { get; set; }
     public bool? ScrobbleWatched { get; set; }
     public bool? ScrobbleRatings { get; set; }
+    public bool? SyncToWeTrakr { get; set; }
+    public bool? SyncFromWeTrakr { get; set; }
+    public bool? WatchlistPlaylist { get; set; }
+    public List<string>? ExcludedLibraryIds { get; set; }
 }

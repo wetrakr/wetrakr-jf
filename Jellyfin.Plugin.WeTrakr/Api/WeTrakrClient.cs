@@ -8,7 +8,9 @@ namespace Jellyfin.Plugin.WeTrakr.Api;
 /// <summary>
 /// POSTs scrobble payloads to {ApiBaseUrl}/webhooks/jellyfin/{WebhookToken}.
 /// One retry on HttpRequestException — scrobble must never throw into the
-/// event loop or Jellyfin playback pipeline.
+/// event loop or Jellyfin playback pipeline. Returns whether the event got
+/// through, so callers only record what WeTrakr actually received (what did
+/// not arrive is picked up by the library sync).
 /// </summary>
 public class WeTrakrClient
 {
@@ -21,11 +23,11 @@ public class WeTrakrClient
         _logger = logger;
     }
 
-    public async Task SendAsync(PluginConfiguration config, ScrobbleTarget target, ScrobblePayload payload, CancellationToken ct)
+    public async Task<bool> SendAsync(PluginConfiguration config, ScrobbleTarget target, ScrobblePayload payload, CancellationToken ct)
     {
         if (target == null || string.IsNullOrEmpty(target.WebhookToken) || string.IsNullOrEmpty(config.ApiBaseUrl))
         {
-            return;
+            return false;
         }
 
         var url = $"{config.ApiBaseUrl.TrimEnd('/')}/webhooks/jellyfin/{target.WebhookToken}";
@@ -56,7 +58,7 @@ public class WeTrakrClient
                     }
                     Plugin.Instance.SaveConfiguration();
                 }
-                return;
+                return true;
             }
             catch (HttpRequestException ex) when (attempt == 1)
             {
@@ -65,13 +67,16 @@ public class WeTrakrClient
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[WeTrakr] POST failed for event {Event}", payload.Event);
-                return;
+                return false;
             }
         }
+        return false;
     }
 }
 
 internal static class UserAgent
 {
-    public static readonly string Value = $"WeTrakr-Jellyfin/{typeof(UserAgent).Assembly.GetName().Version}";
+    public static readonly string PluginVersion = typeof(UserAgent).Assembly.GetName().Version?.ToString() ?? "0";
+
+    public static readonly string Value = $"WeTrakr-Jellyfin/{PluginVersion}";
 }
