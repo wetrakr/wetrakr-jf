@@ -22,7 +22,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override string Name => "WeTrakr";
 
-    public override string Description => "Automatic scrobbling to your WeTrakr profile. Tracks what you play, pause, resume and finish in Jellyfin.";
+    public override string Description => "Automatic scrobbling and two-way library sync with your WeTrakr profile: what you play, mark, rate and favorite in Jellyfin, and what you watch elsewhere.";
 
     public IEnumerable<PluginPageInfo> GetPages() => new[]
     {

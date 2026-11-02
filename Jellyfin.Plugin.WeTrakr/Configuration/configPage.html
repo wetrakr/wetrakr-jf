@@ -143,6 +143,12 @@
           <strong id="wtJellyfinUser">This account</strong> scrobbles to WeTrakr as <strong id="wtUsername">-</strong>.
           <br/>
           <span id="wtStats" style="opacity:0.75"></span>
+          <br/>
+          <span id="wtSyncLine" style="opacity:0.75"></span>
+        </p>
+        <p id="wtInvalidNotice" class="fieldDescription" style="display:none; color:#e5a00d;">
+          WeTrakr no longer accepts this link (the account was paired again somewhere else, or the
+          connection was removed on WeTrakr). Disconnect and connect it again.
         </p>
         <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
           <span>Disconnect this account</span>
@@ -167,16 +173,72 @@
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label>
             <input type="checkbox" is="emby-checkbox" id="wtToggleWatched" />
-            <span>Track "mark as watched" (coming soon)</span>
+            <span>Send "mark as watched" and "mark as unwatched"</span>
           </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            WeTrakr decides what an unwatched mark does to the history (Settings &gt; Jellyfin on WeTrakr).
+          </div>
         </div>
 
         <div class="checkboxContainer checkboxContainer-withDescription">
           <label>
             <input type="checkbox" is="emby-checkbox" id="wtToggleRatings" />
-            <span>Sync ratings and favorites (coming soon)</span>
+            <span>Send ratings and favorites as they change</span>
           </label>
         </div>
+      </div>
+
+      <!-- Server-wide library sync settings -->
+      <div id="wtSyncSettings" class="verticalSection" style="display:none">
+        <h3 class="sectionTitle">Library sync</h3>
+        <p class="fieldDescription">
+          Keeps the library of every connected account in step with its WeTrakr profile, both ways:
+          watched history, resume points, ratings, favorites and a private "WeTrakr Watchlist" playlist
+          with what is in Planning. What each account syncs is chosen on WeTrakr (Settings &gt; Jellyfin).
+          Changes made here go to WeTrakr a few minutes later; changes made on WeTrakr are picked up
+          when the account uses Jellyfin, and a full pass runs every night.
+        </p>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtSyncTo" />
+            <span>Send the library to WeTrakr</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            The first time, everything already watched, in progress, rated or favorite; then only what changes.
+          </div>
+        </div>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtSyncFrom" />
+            <span>Bring WeTrakr into Jellyfin</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Marks as watched what you watched elsewhere, adds resume points, ratings and favorites.
+            Only titles that are in this library can be updated.
+          </div>
+        </div>
+
+        <div class="checkboxContainer checkboxContainer-withDescription">
+          <label>
+            <input type="checkbox" is="emby-checkbox" id="wtSyncPlaylist" />
+            <span>Keep a "WeTrakr Watchlist" playlist</span>
+          </label>
+          <div class="fieldDescription checkboxFieldDescription">
+            Movies in Planning, and the next unwatched episode of each show in Planning.
+          </div>
+        </div>
+
+        <div id="wtLibrariesBox" style="margin: 1em 0;">
+          <div class="fieldDescription" style="margin-bottom:0.5em;">Libraries to leave out (no scrobbling and no sync):</div>
+          <div id="wtLibraries"></div>
+        </div>
+
+        <button is="emby-button" type="button" class="raised button-submit" id="wtSyncNowBtn">
+          <span>Sync now</span>
+        </button>
+        <p class="fieldDescription" id="wtSyncNowStatus"></p>
       </div>
 
     </div>
@@ -283,6 +345,10 @@
         $('wtUsername').textContent = link.Username || '(unknown user)';
         var last = link.LastScrobbleAt ? new Date(link.LastScrobbleAt).toLocaleString() : 'never';
         $('wtStats').textContent = link.ScrobbleCount + ' events sent, last at ' + last;
+        $('wtSyncLine').textContent = link.LastSyncAt
+          ? 'Library sync: ' + (link.LastSyncResult || 'done') + ' (' + new Date(link.LastSyncAt).toLocaleString() + ')'
+          : 'Library sync: not run yet';
+        $('wtInvalidNotice').style.display = link.Invalid ? 'block' : 'none';
         showState('Connected');
       } else {
         // Under the legacy pairing this account IS being scrobbled, just into
@@ -298,6 +364,8 @@
 
       $('wtEventSettings').style.display =
         ((snapshot.Links || []).length || snapshot.LegacyMode) ? 'block' : 'none';
+      // The sync keeps a state per account: only accounts paired one by one.
+      $('wtSyncSettings').style.display = (snapshot.Links || []).length ? 'block' : 'none';
 
       $('wtLegacyNotice').style.display = snapshot.LegacyMode ? 'block' : 'none';
       if (snapshot.LegacyMode) {
@@ -311,6 +379,10 @@
         $('wtTogglePlaying').checked = !!snapshot.ScrobblePlaying;
         $('wtToggleWatched').checked = !!snapshot.ScrobbleWatched;
         $('wtToggleRatings').checked = !!snapshot.ScrobbleRatings;
+        $('wtSyncTo').checked = !!snapshot.SyncToWeTrakr;
+        $('wtSyncFrom').checked = !!snapshot.SyncFromWeTrakr;
+        $('wtSyncPlaylist').checked = !!snapshot.WatchlistPlaylist;
+        renderLibraries();
         renderUserOptions();
         renderSelected();
       }).catch(function (err) {
@@ -439,6 +511,44 @@
         .catch(function (err) { alertError('Could not remove the old pairing', err); });
     }
 
+    function renderLibraries() {
+      var excluded = (snapshot.ExcludedLibraryIds || []).map(normId);
+      var libs = snapshot.Libraries || [];
+      $('wtLibrariesBox').style.display = libs.length ? 'block' : 'none';
+      $('wtLibraries').innerHTML = libs.map(function (l) {
+        var checked = excluded.indexOf(normId(l.Id)) !== -1 ? ' checked' : '';
+        return '<label style="display:block; margin:0.25em 0;"><input type="checkbox" class="wtLibraryToggle" data-id="'
+          + escapeHtml(l.Id) + '"' + checked + ' /> ' + escapeHtml(l.Name) + '</label>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('.wtLibraryToggle'), function (box) {
+        box.addEventListener('change', saveExcludedLibraries);
+      });
+    }
+
+    function saveExcludedLibraries() {
+      var ids = Array.prototype.filter.call(document.querySelectorAll('.wtLibraryToggle'), function (b) { return b.checked; })
+        .map(function (b) { return b.getAttribute('data-id'); });
+      snapshot.ExcludedLibraryIds = ids;
+      updateSetting('ExcludedLibraryIds', ids);
+    }
+
+    function syncNow() {
+      $('wtSyncNowStatus').textContent = 'Syncing…';
+      postJson('SyncNow')
+        .then(function () {
+          // The pass runs in the background; each account shows its result.
+          setTimeout(function () {
+            refreshStatus().then(function () {
+              $('wtSyncNowStatus').textContent = 'Started. Results appear under each account when done.';
+            });
+          }, 4000);
+        })
+        .catch(function (err) {
+          $('wtSyncNowStatus').textContent = '';
+          alertError('Could not start the sync', err);
+        });
+    }
+
     function updateSetting(key, value) {
       var body = {};
       body[key] = value;
@@ -467,6 +577,10 @@
       $('wtTogglePlaying').addEventListener('change', function (e) { updateSetting('ScrobblePlaying', e.target.checked); });
       $('wtToggleWatched').addEventListener('change', function (e) { updateSetting('ScrobbleWatched', e.target.checked); });
       $('wtToggleRatings').addEventListener('change', function (e) { updateSetting('ScrobbleRatings', e.target.checked); });
+      $('wtSyncTo').addEventListener('change', function (e) { updateSetting('SyncToWeTrakr', e.target.checked); });
+      $('wtSyncFrom').addEventListener('change', function (e) { updateSetting('SyncFromWeTrakr', e.target.checked); });
+      $('wtSyncPlaylist').addEventListener('change', function (e) { updateSetting('WatchlistPlaylist', e.target.checked); });
+      $('wtSyncNowBtn').addEventListener('click', syncNow);
     }
 
     function initPage() {

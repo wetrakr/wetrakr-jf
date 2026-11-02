@@ -1,8 +1,9 @@
 # WeTrakr for Jellyfin
 
-Dedicated Jellyfin plugin that scrobbles your playback activity to [WeTrakr](https://wetrakr.com).
+Dedicated Jellyfin plugin that scrobbles your playback activity to [WeTrakr](https://wetrakr.com) and, since 0.2.0, keeps your library in sync with your WeTrakr profile in both directions.
 
-Sends `PlaybackStart`, `PlaybackProgress` (periodic), `PlaybackPause`, `PlaybackUnpause`, and `PlaybackStop` events with provider IDs (IMDb, TMDB, TVDB) for both movies and episodes.
+- **Scrobbling:** `PlaybackStart`, `PlaybackProgress` (throttled), `PlaybackPause`, `PlaybackUnpause`, `PlaybackStop`, watched/unwatched marks, ratings and favorites, with provider IDs (IMDb, TMDB, TVDB) for movies and episodes.
+- **Library sync:** the first time, everything you already watched, rated, favorited or left half-way goes to WeTrakr; from then on only what changes. In the other direction, what you watch elsewhere is marked as watched in Jellyfin, with resume points, ratings, favorites and a private "WeTrakr Watchlist" playlist with your Planning. What each account syncs is chosen on WeTrakr (Settings > Jellyfin).
 
 ## Install
 
@@ -79,10 +80,18 @@ Edit `ApiBaseUrl` in the plugin's configuration XML on disk, or set it from the 
 - Posts a JSON body to `{ApiBaseUrl}/webhooks/jellyfin/{WebhookToken}` — the WeTrakr API already handles this endpoint.
 - `WebhookToken` is obtained via the standard WeTrakr device-code OAuth flow (`/oauth/device/code?platform=jellyfin` + `/oauth/device/token`).
 
+### Library sync (0.2.0+)
+
+Same protocol as the official Emby plugin and the Kodi add-on (`/integrations/jellyfin/*`, authenticated with the account's pairing token). Only for accounts paired one by one; the legacy server-wide pairing does not sync.
+
+- **Upload (Jellyfin → WeTrakr):** an initial import of what is watched, favorite, rated or in progress, then a diff against the last synced state kept per account in `state-<userId>.json` in the plugin data folder. Live events leave a notice (`SyncSignals`); five minutes later the diff of just those items is uploaded. Never sends "unwatched": only the live event does, and WeTrakr decides what that does to the history.
+- **Download (WeTrakr → Jellyfin):** a snapshot the first time, then the journal of changes (`/changes?since=`). States are written with `UserDataSaveReason.Import`, which the scrobbler ignores, so nothing echoes back. An "unwatched" done in Jellyfin on purpose is not undone by WeTrakr's older watched state.
+- **When:** a cheap check (one request, `unchanged` when nothing happened) when a linked account starts using Jellyfin, every 30 min while it is active and with a backoff up to 6 h at rest; a full reconciliation every night (scheduled task "Sync library with WeTrakr", 03:00-05:00 with a random minute); and "Sync now" on the plugin page or on the WeTrakr website (picked up on the next check).
+- Libraries can be left out of scrobbling and sync on the plugin page.
+
 ## Roadmap
 
-- v2: `ItemMarkedPlayed` (manual watched toggle in Jellyfin).
-- v3: `UserDataSaved` (ratings and favorites).
+- WeTrakr lists as Jellyfin playlists (the Kodi add-on already does it with tags).
 - Optional QR code on the config page during pairing.
 
 ## License
