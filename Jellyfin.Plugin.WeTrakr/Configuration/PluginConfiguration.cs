@@ -25,6 +25,7 @@ public class PluginConfiguration : BasePluginConfiguration
         WatchlistPlaylistName = "WeTrakr Watchlist";
         MaxCheckIntervalHours = 6;
         ExcludedLibraryIds = new List<string>();
+        ExcludedPaths = new List<string>();
     }
 
     /// <summary>
@@ -103,6 +104,14 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Libraries ignored altogether (no scrobble, no sync): VirtualFolderInfo.ItemId values.</summary>
     public List<string> ExcludedLibraryIds { get; set; }
+
+    /// <summary>
+    /// Folders ignored altogether, one path each: a whole library or a subfolder
+    /// of one. An item is left out when its path is that folder or inside it
+    /// (case-insensitive, either separator). Survives a library being recreated,
+    /// which gives it a new id. See Sync/LibraryFilter.
+    /// </summary>
+    public List<string> ExcludedPaths { get; set; }
 
     /// <summary>Linked accounts the sync can run for (token present and still accepted by WeTrakr).</summary>
     public IEnumerable<UserLink> SyncLinks()
@@ -193,4 +202,14 @@ public class UserLink
     public DateTime? LastSyncAt { get; set; }
 
     public string LastSyncResult { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Libraries left out for this account only, on top of the server-wide
+    /// <see cref="PluginConfiguration.ExcludedLibraryIds"/>. On a shared server
+    /// one person may skip a library another one wants tracked.
+    /// </summary>
+    public List<string> ExcludedLibraryIds { get; set; } = new();
+
+    /// <summary>Folders left out for this account only, on top of <see cref="PluginConfiguration.ExcludedPaths"/>.</summary>
+    public List<string> ExcludedPaths { get; set; } = new();
 }

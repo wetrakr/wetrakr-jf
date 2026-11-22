@@ -198,8 +198,8 @@ public class ScrobbleManager : IHostedService
     {
         try
         {
-            if (!ShouldDispatch(item)) return false;
             if (session == null) return false;
+            if (!ShouldDispatch(item, session.UserId)) return false;
 
             var config = Plugin.Instance?.Configuration;
             if (config == null) return false;
@@ -239,7 +239,7 @@ public class ScrobbleManager : IHostedService
             // upload, whatever happens to the live event below (switched off,
             // or not received). Import is skipped: the sync writes with it, and
             // so do other plugins' importers (the daily full pass sees those).
-            if (e.SaveReason != UserDataSaveReason.Import && ShouldDispatch(e.Item))
+            if (e.SaveReason != UserDataSaveReason.Import && ShouldDispatch(e.Item, e.UserId))
             {
                 SyncSignals.MarkDirty(e.UserId.ToString("N"), e.Item.Id);
             }
@@ -250,7 +250,7 @@ public class ScrobbleManager : IHostedService
                 return;
             }
 
-            if (!ShouldDispatch(e.Item)) return;
+            if (!ShouldDispatch(e.Item, e.UserId)) return;
 
             var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
                 ? "ItemMarkedPlayed"
@@ -285,7 +285,7 @@ public class ScrobbleManager : IHostedService
     /// </summary>
     private void OnPlaybackProgressSaved(UserDataSaveEventArgs e)
     {
-        if (!ShouldDispatch(e.Item)) return;
+        if (!ShouldDispatch(e.Item, e.UserId)) return;
 
         // Without a known runtime (or under MinResumeDuration) Jellyfin marks
         // the item played on the very first tick; that is not a finished watch.
@@ -364,11 +364,13 @@ public class ScrobbleManager : IHostedService
     /// <summary>Jellyfin's default MinResumeDurationSeconds.</summary>
     private static readonly TimeSpan MinRuntimeForProgressPlayed = TimeSpan.FromMinutes(5);
 
-    private bool ShouldDispatch(BaseItem? item)
+    /// <summary>Movies and episodes outside what is left out, server-wide or for this account.</summary>
+    private bool ShouldDispatch(BaseItem? item, Guid userId)
     {
         if (item == null) return false;
         if (item is not Movie && item is not Episode) return false;
-        return !LibraryFilter.Current(_library).IsExcluded(item);
+        var account = userId == Guid.Empty ? null : userId.ToString("N");
+        return !LibraryFilter.Current(_library, account).IsExcluded(item);
     }
 
     private static string SessionKey(PlaybackProgressEventArgs e)

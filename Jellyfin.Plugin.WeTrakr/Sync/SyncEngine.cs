@@ -258,7 +258,7 @@ public class SyncEngine
     private async Task<int> Upload(SyncContext ctx, JfUser user, UserSyncState state, Mode mode, IReadOnlyCollection<Guid>? dirtyItems, int maxBatch, CancellationToken ct)
     {
         var initial = !state.InitialDone;
-        var filter = LibraryFilter.Current(_library);
+        var filter = LibraryFilter.Current(_library, user.Id.ToString("N"));
         List<BaseItem> candidates;
         if (initial) candidates = filter.Apply(ScanInteresting(user));
         else if (mode == Mode.Local) candidates = filter.Apply(ItemsById(dirtyItems));

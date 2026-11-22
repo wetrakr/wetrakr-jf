@@ -26,7 +26,7 @@ public class LibraryIndex
     public static LibraryIndex Build(ILibraryManager library, JfUser user)
     {
         var idx = new LibraryIndex();
-        var items = LibraryFilter.Current(library).Apply(library.GetItemList(new InternalItemsQuery(user)
+        var items = LibraryFilter.Current(library, user.Id.ToString("N")).Apply(library.GetItemList(new InternalItemsQuery(user)
         {
             IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.Episode },
             Recursive = true,
