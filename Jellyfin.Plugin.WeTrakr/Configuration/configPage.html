@@ -61,6 +61,29 @@
       #WeTrakrConfigPage button#wtDropLegacyBtn:hover { opacity: 1; }
       #WeTrakrConfigPage button#wtDropLegacyBtn span { color: inherit !important; }
 
+      #WeTrakrConfigPage textarea.wtPaths {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 4.5em;
+        padding: 0.5em;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9em;
+        background: rgba(128, 128, 128, 0.08);
+        color: inherit;
+        border: 1px solid rgba(128, 128, 128, 0.45);
+        border-radius: 4px;
+        resize: vertical;
+      }
+      #WeTrakrConfigPage details.wtLinkExclusions {
+        margin: 0.5em 0 1.25em;
+        padding: 0.5em 0.75em;
+        border-left: 3px solid #6c4ad7;
+      }
+      #WeTrakrConfigPage details.wtLinkExclusions summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+
       #WeTrakrConfigPage .wtLinkedBadge {
         display: inline-block;
         font-size: 0.8em;
@@ -150,6 +173,24 @@
           WeTrakr no longer accepts this link (the account was paired again somewhere else, or the
           connection was removed on WeTrakr). Disconnect and connect it again.
         </p>
+        <details class="wtLinkExclusions" id="wtLinkExclusions">
+          <summary>Leave out for this account <span id="wtLinkExclusionsCount" style="font-weight:normal; opacity:0.75"></span></summary>
+          <p class="fieldDescription">
+            Nothing in these libraries or folders is scrobbled or synced for <strong id="wtLinkExclusionsUser">this account</strong>.
+            Other accounts are not affected. Whatever is left out for the whole server (Library sync, below) applies on top.
+          </p>
+          <div id="wtLinkLibrariesBox" style="margin: 0.75em 0;">
+            <div class="fieldDescription" style="margin-bottom:0.5em;">Libraries:</div>
+            <div id="wtLinkLibraries"></div>
+          </div>
+          <div style="margin: 0.75em 0;">
+            <label class="fieldDescription" for="wtLinkPaths" style="display:block; margin-bottom:0.5em;">
+              Folders, one per line (a whole library or a subfolder, e.g. <code>/media/anime</code>):
+            </label>
+            <textarea id="wtLinkPaths" class="wtPaths" rows="3" spellcheck="false"></textarea>
+            <div class="fieldDescription" id="wtLinkPathsStatus"></div>
+          </div>
+        </details>
         <button is="emby-button" type="button" class="button" id="wtDisconnectBtn">
           <span>Disconnect this account</span>
         </button>
@@ -235,6 +276,18 @@
           <div id="wtLibraries"></div>
         </div>
 
+        <div style="margin: 1em 0;">
+          <label class="fieldDescription" for="wtPaths" style="display:block; margin-bottom:0.5em;">
+            Folders to leave out, one per line (a whole library or a subfolder, e.g. <code>/media/anime</code>).
+            Paths keep working if a library is recreated; a folder also covers everything inside it.
+          </label>
+          <textarea id="wtPaths" class="wtPaths" rows="3" spellcheck="false"></textarea>
+          <div class="fieldDescription" id="wtPathsStatus"></div>
+        </div>
+        <p class="fieldDescription">
+          Each connected account can also leave out libraries and folders of its own (under "Leave out for this account", above).
+        </p>
+
         <button is="emby-button" type="button" class="raised button-submit" id="wtSyncNowBtn">
           <span>Sync now</span>
         </button>
@@ -257,6 +310,8 @@
     // the dropdown re-renders without another round trip.
     var snapshot = { Links: [] };
     var jellyfinUsers = [];
+    // Account whose "Leave out" block was last rendered, to keep it open/closed across refreshes.
+    var linkExclusionsShownFor = null;
 
     function $(id) { return document.getElementById(id); }
 
@@ -349,6 +404,7 @@
           ? 'Library sync: ' + (link.LastSyncResult || 'done') + ' (' + new Date(link.LastSyncAt).toLocaleString() + ')'
           : 'Library sync: not run yet';
         $('wtInvalidNotice').style.display = link.Invalid ? 'block' : 'none';
+        renderLinkExclusions(link, name);
         showState('Connected');
       } else {
         // Under the legacy pairing this account IS being scrobbled, just into
@@ -383,6 +439,7 @@
         $('wtSyncFrom').checked = !!snapshot.SyncFromWeTrakr;
         $('wtSyncPlaylist').checked = !!snapshot.WatchlistPlaylist;
         renderLibraries();
+        $('wtPaths').value = (snapshot.ExcludedPaths || []).join('\n');
         renderUserOptions();
         renderSelected();
       }).catch(function (err) {
@@ -532,6 +589,89 @@
       updateSetting('ExcludedLibraryIds', ids);
     }
 
+    // One path per line; blanks dropped. The server trims and deduplicates too.
+    function readPaths(textarea) {
+      return (textarea.value || '').split(/\r?\n/)
+        .map(function (p) { return p.trim(); })
+        .filter(function (p) { return p.length > 0; });
+    }
+
+    function showSaved(statusId, promise) {
+      $(statusId).textContent = 'Saving…';
+      return promise.then(function () {
+        $(statusId).textContent = 'Saved.';
+        setTimeout(function () { $(statusId).textContent = ''; }, 2500);
+      }).catch(function (err) {
+        $(statusId).textContent = '';
+        alertError('Could not save', err);
+      });
+    }
+
+    function saveExcludedPaths() {
+      var paths = readPaths($('wtPaths'));
+      snapshot.ExcludedPaths = paths;
+      showSaved('wtPathsStatus', updateSetting('ExcludedPaths', paths)).then(refreshStatus);
+    }
+
+    function renderLinkExclusions(link, name) {
+      var excluded = (link.ExcludedLibraryIds || []).map(normId);
+      var paths = link.ExcludedPaths || [];
+      var libs = snapshot.Libraries || [];
+
+      $('wtLinkExclusionsUser').textContent = name;
+      $('wtLinkLibrariesBox').style.display = libs.length ? 'block' : 'none';
+      $('wtLinkLibraries').innerHTML = libs.map(function (l) {
+        var checked = excluded.indexOf(normId(l.Id)) !== -1 ? ' checked' : '';
+        return '<label style="display:block; margin:0.25em 0;"><input type="checkbox" class="wtLinkLibraryToggle" data-id="'
+          + escapeHtml(l.Id) + '"' + checked + ' /> ' + escapeHtml(l.Name) + '</label>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('.wtLinkLibraryToggle'), function (box) {
+        box.addEventListener('change', saveLinkLibraries);
+      });
+      $('wtLinkPaths').value = paths.join('\n');
+
+      var count = excluded.length + paths.length;
+      setLinkExclusionsCount(count);
+      // Open by default only when something is already left out; re-renders
+      // of the same account (after a save) keep it as the admin left it.
+      if (normId(link.UserId) !== linkExclusionsShownFor) {
+        linkExclusionsShownFor = normId(link.UserId);
+        $('wtLinkExclusions').open = count > 0;
+      }
+    }
+
+    function setLinkExclusionsCount(count) {
+      $('wtLinkExclusionsCount').textContent = count ? '(' + count + ')' : '';
+    }
+
+    function saveLinkSettings(body) {
+      var user = selectedUser();
+      var link = user ? linkFor(user.Id) : null;
+      if (!link) return Promise.resolve();
+      body.UserId = link.UserId;
+      return postJson('LinkSettings', body);
+    }
+
+    function saveLinkLibraries() {
+      var user = selectedUser();
+      var link = user ? linkFor(user.Id) : null;
+      if (!link) return;
+      var ids = Array.prototype.filter.call(document.querySelectorAll('.wtLinkLibraryToggle'), function (b) { return b.checked; })
+        .map(function (b) { return b.getAttribute('data-id'); });
+      link.ExcludedLibraryIds = ids;
+      setLinkExclusionsCount(ids.length + (link.ExcludedPaths || []).length);
+      saveLinkSettings({ ExcludedLibraryIds: ids }).catch(function (err) { alertError('Could not save', err); });
+    }
+
+    function saveLinkPaths() {
+      var user = selectedUser();
+      var link = user ? linkFor(user.Id) : null;
+      if (!link) return;
+      var paths = readPaths($('wtLinkPaths'));
+      link.ExcludedPaths = paths;
+      showSaved('wtLinkPathsStatus', saveLinkSettings({ ExcludedPaths: paths })).then(refreshStatus);
+    }
+
     function syncNow() {
       $('wtSyncNowStatus').textContent = 'Syncing…';
       postJson('SyncNow')
@@ -581,6 +721,8 @@
       $('wtSyncFrom').addEventListener('change', function (e) { updateSetting('SyncFromWeTrakr', e.target.checked); });
       $('wtSyncPlaylist').addEventListener('change', function (e) { updateSetting('WatchlistPlaylist', e.target.checked); });
       $('wtSyncNowBtn').addEventListener('click', syncNow);
+      $('wtPaths').addEventListener('change', saveExcludedPaths);
+      $('wtLinkPaths').addEventListener('change', saveLinkPaths);
     }
 
     function initPage() {
