@@ -209,7 +209,9 @@ public class WeTrakrController : ControllerBase
                 Invalid = l.Invalid,
                 LastSyncAt = l.LastSyncAt,
                 LastSyncResult = l.LastSyncResult,
-                NextCheckAt = _scheduler.NextCheckFor(l.JellyfinUserId)
+                NextCheckAt = _scheduler.NextCheckFor(l.JellyfinUserId),
+                ExcludedLibraryIds = l.ExcludedLibraryIds ?? new List<string>(),
+                ExcludedPaths = l.ExcludedPaths ?? new List<string>()
             })
             .ToList();
 
@@ -229,6 +231,7 @@ public class WeTrakrController : ControllerBase
             SyncFromWeTrakr = cfg.SyncFromWeTrakr,
             WatchlistPlaylist = cfg.WatchlistPlaylist,
             ExcludedLibraryIds = cfg.ExcludedLibraryIds ?? new List<string>(),
+            ExcludedPaths = cfg.ExcludedPaths ?? new List<string>(),
             Libraries = LibraryFilter.SelectableLibraries(_library)
                 .Select(v => new LibraryDto { Id = v.ItemId, Name = v.Name ?? string.Empty })
                 .ToList()
@@ -263,18 +266,60 @@ public class WeTrakrController : ControllerBase
         if (dto.SyncToWeTrakr.HasValue) cfg.SyncToWeTrakr = dto.SyncToWeTrakr.Value;
         if (dto.SyncFromWeTrakr.HasValue) cfg.SyncFromWeTrakr = dto.SyncFromWeTrakr.Value;
         if (dto.WatchlistPlaylist.HasValue) cfg.WatchlistPlaylist = dto.WatchlistPlaylist.Value;
-        if (dto.ExcludedLibraryIds != null)
-        {
-            cfg.ExcludedLibraryIds = dto.ExcludedLibraryIds
-                .Where(id => Guid.TryParse(id, out _))
-                .Select(id => Guid.Parse(id).ToString("N"))
-                .Distinct()
-                .ToList();
-        }
+        if (dto.ExcludedLibraryIds != null) cfg.ExcludedLibraryIds = CleanLibraryIds(dto.ExcludedLibraryIds);
+        if (dto.ExcludedPaths != null) cfg.ExcludedPaths = CleanPaths(dto.ExcludedPaths);
 
         Plugin.Instance!.SaveConfiguration();
         return NoContent();
     }
+
+    /// <summary>
+    /// What one linked account leaves out, on top of the server-wide rules.
+    /// The account is body.UserId; a null list leaves that field as it is.
+    /// </summary>
+    [HttpPost("LinkSettings")]
+    public ActionResult UpdateLinkSettings([FromBody] LinkSettingsUpdateDto dto)
+    {
+        var cfg = Plugin.Instance?.Configuration;
+        if (cfg == null) return StatusCode(StatusCodes.Status500InternalServerError);
+
+        var link = cfg.FindLink(NormalizeId(dto?.UserId));
+        if (link == null) return NotFound(new { error = "account_not_linked" });
+
+        if (dto!.ExcludedLibraryIds != null) link.ExcludedLibraryIds = CleanLibraryIds(dto.ExcludedLibraryIds);
+        if (dto.ExcludedPaths != null) link.ExcludedPaths = CleanPaths(dto.ExcludedPaths);
+
+        Plugin.Instance!.SaveConfiguration();
+        return NoContent();
+    }
+
+    private static List<string> CleanLibraryIds(IEnumerable<string?> ids)
+        => ids
+            .Select(id => Guid.TryParse(id?.Trim(), out var g) ? g.ToString("N") : null)
+            .Where(id => id != null)
+            .Select(id => id!)
+            .Distinct()
+            .ToList();
+
+    /// <summary>Trimmed, blanks and bare roots dropped, duplicates (ignoring case and separators) removed.</summary>
+    private static List<string> CleanPaths(IEnumerable<string?> paths)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var raw in paths)
+        {
+            var trimmed = raw?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0 || trimmed.Length > MaxPathLength) continue;
+            var norm = LibraryFilter.NormalizePath(trimmed);
+            if (norm.Length == 0 || !seen.Add(norm)) continue;
+            result.Add(trimmed);
+            if (result.Count >= MaxPaths) break;
+        }
+        return result;
+    }
+
+    private const int MaxPaths = 200;
+    private const int MaxPathLength = 1024;
 
     private static void ClearLegacy(PluginConfiguration cfg)
     {
@@ -325,6 +370,8 @@ public class UserLinkDto
     public DateTime? LastSyncAt { get; set; }
     public string LastSyncResult { get; set; } = string.Empty;
     public DateTime? NextCheckAt { get; set; }
+    public List<string> ExcludedLibraryIds { get; set; } = new();
+    public List<string> ExcludedPaths { get; set; } = new();
 }
 
 public class LibraryDto
@@ -349,6 +396,7 @@ public class StatusSnapshot
     public bool SyncFromWeTrakr { get; set; }
     public bool WatchlistPlaylist { get; set; }
     public List<string> ExcludedLibraryIds { get; set; } = new();
+    public List<string> ExcludedPaths { get; set; } = new();
     public List<LibraryDto> Libraries { get; set; } = new();
 }
 
@@ -361,4 +409,13 @@ public class SettingsUpdateDto
     public bool? SyncFromWeTrakr { get; set; }
     public bool? WatchlistPlaylist { get; set; }
     public List<string>? ExcludedLibraryIds { get; set; }
+    public List<string>? ExcludedPaths { get; set; }
+}
+
+public class LinkSettingsUpdateDto
+{
+    /// <summary>Jellyfin user id of the linked account (dashed or "N").</summary>
+    public string? UserId { get; set; }
+    public List<string>? ExcludedLibraryIds { get; set; }
+    public List<string>? ExcludedPaths { get; set; }
 }
