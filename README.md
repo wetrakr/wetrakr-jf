@@ -87,7 +87,10 @@ Same protocol as the official Emby plugin and the Kodi add-on (`/integrations/je
 - **Upload (Jellyfin → WeTrakr):** an initial import of what is watched, favorite, rated or in progress, then a diff against the last synced state kept per account in `state-<userId>.json` in the plugin data folder. Live events leave a notice (`SyncSignals`); five minutes later the diff of just those items is uploaded. Never sends "unwatched": only the live event does, and WeTrakr decides what that does to the history.
 - **Download (WeTrakr → Jellyfin):** a snapshot the first time, then the journal of changes (`/changes?since=`). States are written with `UserDataSaveReason.Import`, which the scrobbler ignores, so nothing echoes back. An "unwatched" done in Jellyfin on purpose is not undone by WeTrakr's older watched state.
 - **When:** a cheap check (one request, `unchanged` when nothing happened) when a linked account starts using Jellyfin, every 30 min while it is active and with a backoff up to 6 h at rest; a full reconciliation every night (scheduled task "Sync library with WeTrakr", 03:00-05:00 with a random minute); and "Sync now" on the plugin page or on the WeTrakr website (picked up on the next check).
-- Libraries can be left out of scrobbling and sync on the plugin page.
+- **Leaving things out:** libraries and folders can be left out of scrobbling and sync on the plugin page, for the whole server (Library sync section) or for one connected account only ("Leave out for this account", under that account). The account's rules add to the server's.
+  - Libraries are ticked from a list.
+  - Folders are typed one per line (e.g. `/media/anime` or `D:\Media\Anime\Seasonal`): an item is left out when its file is in that folder or below it. Matching ignores case and the kind of slash, and stops at folder boundaries, so `/media/anime` does not cover `/media/anime2`. A folder rule keeps working if the library is recreated, and can cover just a subfolder of a library. Series are matched by their own folder, episodes and movies by their file.
+  - Leaving something out only stops what happens from then on: what was already sent to WeTrakr stays there.
 
 ## Roadmap
 
