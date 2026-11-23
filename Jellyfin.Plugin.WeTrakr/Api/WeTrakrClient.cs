@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Jellyfin.Plugin.WeTrakr.Configuration;
 using Jellyfin.Plugin.WeTrakr.Scrobbling;
 using Microsoft.Extensions.Logging;
@@ -33,6 +35,9 @@ public class WeTrakrClient
         var url = $"{config.ApiBaseUrl.TrimEnd('/')}/webhooks/jellyfin/{target.WebhookToken}";
         var http = _factory.CreateClient(HttpClientNames.WeTrakr);
         http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent.Value);
+        // Asks WeTrakr to answer once the event is processed, with what came of
+        // it (matched, not found, ignored and why), so the log can say so.
+        http.DefaultRequestHeaders.Add("X-WeTrakr-Result", "1");
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
@@ -73,7 +78,8 @@ public class WeTrakrClient
                     Plugin.Instance.SaveConfiguration();
                 }
 
-                LogSent(target, payload);
+                var result = await ReadResultAsync(response, ct).ConfigureAwait(false);
+                LogSent(target, payload, result);
                 return true;
             }
             catch (HttpRequestException ex) when (attempt == 1)
@@ -91,21 +97,56 @@ public class WeTrakrClient
     }
 
     /// <summary>
-    /// One line per event that reached WeTrakr, with the ids it was sent with:
-    /// when a title lands on the wrong entry (or nowhere), these ids are what
-    /// to check in Jellyfin's metadata. Progress ticks only at Debug.
+    /// One line per event that reached WeTrakr, with the ids it was sent with
+    /// and, from API versions that report it, what WeTrakr made of it: the
+    /// title it matched, or why it did not record anything. When a title lands
+    /// on the wrong entry (or nowhere), the ids are what to check in Jellyfin's
+    /// metadata. Progress ticks only at Debug.
     /// </summary>
-    private void LogSent(ScrobbleTarget target, ScrobblePayload payload)
+    private void LogSent(ScrobbleTarget target, ScrobblePayload payload, EventResult? result)
     {
+        var item = ScrobbleLog.Describe(payload);
+        var ids = ScrobbleLog.Ids(payload);
+        var user = string.IsNullOrEmpty(payload.UserName) ? payload.UserId : payload.UserName;
+        var account = string.IsNullOrEmpty(target.Link?.WeTrakrUsername) ? "WeTrakr" : target.Link!.WeTrakrUsername;
+
+        switch (result?.Status)
+        {
+            case "failed":
+                _logger.LogWarning(
+                    "[WeTrakr] WeTrakr could not record {Event} for {Item} ({Ids}) from Jellyfin user {User}: {Reason}",
+                    payload.Event, item, ids, user, result.Reason ?? "no reason given");
+                return;
+            case "ignored":
+                _logger.LogInformation(
+                    "[WeTrakr] WeTrakr ignored {Event} for {Item} from Jellyfin user {User}: {Reason}",
+                    payload.Event, item, user, result.Reason ?? "no reason given");
+                return;
+        }
+
         var level = payload.Event == "PlaybackProgress" ? LogLevel.Debug : LogLevel.Information;
         if (!_logger.IsEnabled(level)) return;
 
-        var account = string.IsNullOrEmpty(target.Link?.WeTrakrUsername) ? "WeTrakr" : target.Link!.WeTrakrUsername;
+        var matched = result?.Media == null ? string.Empty : $"; matched to {result.Describe()}";
+        var already = result?.Status == "duplicate" ? " (already recorded)" : string.Empty;
         _logger.Log(
             level,
-            "[WeTrakr] Sent {Event} for {Item} ({Ids}) from Jellyfin user {User} to {Account}",
-            payload.Event, ScrobbleLog.Describe(payload), ScrobbleLog.Ids(payload),
-            string.IsNullOrEmpty(payload.UserName) ? payload.UserId : payload.UserName, account);
+            "[WeTrakr] Sent {Event} for {Item} ({Ids}) from Jellyfin user {User} to {Account}{Matched}{Already}",
+            payload.Event, item, ids, user, account, matched, already);
+    }
+
+    /// <summary>The "result" WeTrakr sends back when asked; null from older API versions.</summary>
+    private static async Task<EventResult?> ReadResultAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<EventResponse>(cancellationToken: ct).ConfigureAwait(false);
+            return body?.Result;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The start of the error body WeTrakr sent back, if any.</summary>
@@ -130,4 +171,59 @@ internal static class UserAgent
     public static readonly string PluginVersion = typeof(UserAgent).Assembly.GetName().Version?.ToString() ?? "0";
 
     public static readonly string Value = $"WeTrakr-Jellyfin/{PluginVersion}";
+}
+
+/// <summary>Body of the webhook answer: <c>{ ok, result? }</c>.</summary>
+internal sealed class EventResponse
+{
+    [JsonPropertyName("result")]
+    public EventResult? Result { get; set; }
+}
+
+/// <summary>What WeTrakr did with one event (status, reason, what it matched).</summary>
+internal sealed class EventResult
+{
+    /// <summary>success, duplicate, ignored, failed, accepted or pending.</summary>
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("media")]
+    public EventResultMedia? Media { get; set; }
+
+    [JsonPropertyName("episode")]
+    public EventResultEpisode? Episode { get; set; }
+
+    /// <summary>"Title" S01E02 (WeTrakr id 123).</summary>
+    public string Describe()
+    {
+        var text = $"\"{Media?.Title}\"";
+        if (Episode != null) text += $" S{Episode.SeasonNumber:D2}E{Episode.Number:D2}";
+        if (Media?.Id is { } id && id.ValueKind != JsonValueKind.Null) text += $" (WeTrakr {Media.Type} {id})";
+        return text;
+    }
+}
+
+internal sealed class EventResultMedia
+{
+    /// <summary>Number or string, whatever the API sends: only printed.</summary>
+    [JsonPropertyName("id")]
+    public JsonElement? Id { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+}
+
+internal sealed class EventResultEpisode
+{
+    [JsonPropertyName("season_number")]
+    public int SeasonNumber { get; set; }
+
+    [JsonPropertyName("number")]
+    public int Number { get; set; }
 }

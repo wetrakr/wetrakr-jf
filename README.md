@@ -96,12 +96,14 @@ Same protocol as the official Emby plugin and the Kodi add-on (`/integrations/je
 
 Lines start with `[WeTrakr]` (Dashboard > Logs).
 
-- **Sent:** one line per event that reached WeTrakr, with the item and the TMDB/TVDB/IMDb ids it was sent with. WeTrakr matches on those ids, so when a title lands on the wrong entry, they are the first thing to check in the item's metadata. Progress ticks only show up with Debug logging.
+- **Sent:** one line per event that reached WeTrakr, with the item, the TMDB/TVDB/IMDb ids it was sent with and the title WeTrakr matched it to (`matched to "Title" S01E02`). WeTrakr matches on those ids, so when a title lands on the wrong entry, they are the first thing to check in the item's metadata. Progress ticks only show up with Debug logging.
+- **Could not record:** WeTrakr got the event but did not find the title or episode (for example an anime numbered differently), with the reason.
+- **Ignored:** WeTrakr got the event and chose not to record it, with the reason (already watched, turned off in the settings on WeTrakr...).
 - **Rejected:** WeTrakr answered with an error; the line has the HTTP status and the start of the answer.
 - **Could not reach WeTrakr:** network failure after one retry. The library sync catches it up later.
 - **Skipped:** the plugin did not send the event, and says why: the Jellyfin account is not paired, or the item is in a library or folder left out. These repeat on every pause, so each one is written once every few hours (the rest at Debug).
 
-WeTrakr answers as soon as an event arrives and matches the title afterwards, so the plugin log cannot tell whether the title was recognised. Check the activity on WeTrakr for that.
+The plugin asks WeTrakr for the outcome with the `X-WeTrakr-Result: 1` header; WeTrakr then answers once the event is processed (at most 8 seconds, after that the line has no outcome).
 
 ## Roadmap
 
