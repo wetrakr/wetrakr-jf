@@ -199,16 +199,24 @@ public class ScrobbleManager : IHostedService
         try
         {
             if (session == null) return false;
-            if (!ShouldDispatch(item, session.UserId)) return false;
+            if (!ShouldDispatch(item, session.UserId, session.UserName, eventName)) return false;
 
             var config = Plugin.Instance?.Configuration;
             if (config == null) return false;
-            if (!config.ScrobblePlaying) return false;                 // user disabled
+            if (!config.ScrobblePlaying)                                // user disabled
+            {
+                _logger.LogDebug("[WeTrakr] Skipped {Event} for {Item}: playback scrobbling is off in the plugin settings", eventName, item!.Name);
+                return false;
+            }
 
             // Filtering happens here, before anything leaves the server: an
             // account with no WeTrakr link scrobbles nowhere.
             var target = config.ResolveTarget(session.UserId.ToString("N"));
-            if (target == null) return false;
+            if (target == null)
+            {
+                LogNotPaired(session.UserId, session.UserName, eventName, item!.Name);
+                return false;
+            }
 
             var payload = _builder.Build(eventName, item!, session, positionTicks, isPaused, played, target.IsOwner);
             return await _client.SendAsync(config, target, payload, CancellationToken.None);
@@ -250,11 +258,11 @@ public class ScrobbleManager : IHostedService
                 return;
             }
 
-            if (!ShouldDispatch(e.Item, e.UserId)) return;
-
             var eventName = e.SaveReason == UserDataSaveReason.TogglePlayed
                 ? "ItemMarkedPlayed"
                 : "UserDataSaved";
+
+            if (!ShouldDispatch(e.Item, e.UserId, TryGetUserName(e), eventName)) return;
 
             // A re-mark that does not flip the played flag carries no new
             // information. Jellyfin raises TogglePlayed even when the value is
@@ -308,16 +316,24 @@ public class ScrobbleManager : IHostedService
             var config = Plugin.Instance?.Configuration;
             if (config == null) return;
 
-            if (eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched) return;
-            if (eventName == "UserDataSaved" && !config.ScrobbleRatings) return;
-
-            var target = config.ResolveTarget(e.UserId.ToString("N"));
-            if (target == null) return;
+            if ((eventName == "ItemMarkedPlayed" && !config.ScrobbleWatched)
+                || (eventName == "UserDataSaved" && !config.ScrobbleRatings))
+            {
+                _logger.LogDebug("[WeTrakr] Skipped {Event} for {Item}: turned off in the plugin settings", eventName, e.Item.Name);
+                return;
+            }
 
             // Read username via the ABI-stable UserDataSaveEventArgs.User
             // property if present. On older/newer Jellyfin that renamed the
             // User entity namespace this reflection keeps us safe.
             var userName = TryGetUserName(e);
+
+            var target = config.ResolveTarget(e.UserId.ToString("N"));
+            if (target == null)
+            {
+                LogNotPaired(e.UserId, userName, eventName, e.Item.Name);
+                return;
+            }
 
             var payload = _builder.BuildUserData(eventName, e.Item, e.UserData, e.UserId, userName, e.SaveReason.ToString(), target.IsOwner);
             var sent = await _client.SendAsync(config, target, payload, CancellationToken.None);
@@ -371,6 +387,36 @@ public class ScrobbleManager : IHostedService
         if (item is not Movie && item is not Episode) return false;
         var account = userId == Guid.Empty ? null : userId.ToString("N");
         return !LibraryFilter.Current(_library, account).IsExcluded(item);
+    }
+
+    /// <summary>
+    /// ShouldDispatch for an event about to be sent: says in the log why it is
+    /// not. Other item types (music, books...) only at Debug, they are expected.
+    /// </summary>
+    private bool ShouldDispatch(BaseItem? item, Guid userId, string? userName, string eventName)
+    {
+        if (item == null) return false;
+        if (item is not Movie && item is not Episode)
+        {
+            _logger.LogDebug("[WeTrakr] Skipped {Event} for {Item}: only movies and episodes go to WeTrakr ({Type})", eventName, item.Name, item.GetType().Name);
+            return false;
+        }
+
+        if (!ShouldDispatch(item, userId))
+        {
+            var level = ScrobbleLog.FirstInWindow($"excluded|{userId:N}|{item.Id:N}", DateTime.UtcNow) ? LogLevel.Information : LogLevel.Debug;
+            _logger.Log(level, "[WeTrakr] Skipped {Event} for {Item} from Jellyfin user {User}: it is in a library or folder left out in the plugin settings", eventName, item.Name, userName ?? userId.ToString("N"));
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>An account with no WeTrakr link: once per account every few hours, Debug in between.</summary>
+    private void LogNotPaired(Guid userId, string? userName, string eventName, string itemName)
+    {
+        var level = ScrobbleLog.FirstInWindow($"unpaired|{userId:N}", DateTime.UtcNow) ? LogLevel.Information : LogLevel.Debug;
+        _logger.Log(level, "[WeTrakr] Skipped {Event} for {Item}: Jellyfin user {User} is not paired with a WeTrakr account", eventName, itemName, userName ?? userId.ToString("N"));
     }
 
     private static string SessionKey(PlaybackProgressEventArgs e)

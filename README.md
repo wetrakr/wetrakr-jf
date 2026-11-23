@@ -92,6 +92,17 @@ Same protocol as the official Emby plugin and the Kodi add-on (`/integrations/je
   - Folders are typed one per line (e.g. `/media/anime` or `D:\Media\Anime\Seasonal`): an item is left out when its file is in that folder or below it. Matching ignores case and the kind of slash, and stops at folder boundaries, so `/media/anime` does not cover `/media/anime2`. A folder rule keeps working if the library is recreated, and can cover just a subfolder of a library. Series are matched by their own folder, episodes and movies by their file.
   - Leaving something out only stops what happens from then on: what was already sent to WeTrakr stays there.
 
+### What shows up in the Jellyfin log
+
+Lines start with `[WeTrakr]` (Dashboard > Logs).
+
+- **Sent:** one line per event that reached WeTrakr, with the item and the TMDB/TVDB/IMDb ids it was sent with. WeTrakr matches on those ids, so when a title lands on the wrong entry, they are the first thing to check in the item's metadata. Progress ticks only show up with Debug logging.
+- **Rejected:** WeTrakr answered with an error; the line has the HTTP status and the start of the answer.
+- **Could not reach WeTrakr:** network failure after one retry. The library sync catches it up later.
+- **Skipped:** the plugin did not send the event, and says why: the Jellyfin account is not paired, or the item is in a library or folder left out. These repeat on every pause, so each one is written once every few hours (the rest at Debug).
+
+WeTrakr answers as soon as an event arrives and matches the title afterwards, so the plugin log cannot tell whether the title was recognised. Check the activity on WeTrakr for that.
+
 ## Roadmap
 
 - WeTrakr lists as Jellyfin playlists (the Kodi add-on already does it with tags).
